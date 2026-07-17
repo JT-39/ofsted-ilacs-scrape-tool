@@ -121,11 +121,11 @@ This part of some ongoing work to access data we can use to enrich the Ofsted da
 ## Script admin notes
 Simplified notes towards repo/script admin processes and enabling/instructions for non-admin running. 
 ### Script run intructions (User)
-If looking to obtain a full instant refresh of the ilacs output, the ofsted_childrens_services_inspection_scrape.PY should be run. These instructions for running in the cloud/Github. 
+If looking to obtain a full instant refresh of the ilacs output, ofsted_ilacs_scrape.py should be run. These instructions for running in the cloud/Github. 
 - Create a new Codespace (on main)
-- Type run the following bash script at Terminal prompt to set up './setup.sh'
-- Run the script (can right click script file and select 'run in python....'
-- Download the now refreshed ofsted_childrens_services_inspection_scrape.XLSX (Right click, download)
+- Type run the following bash script at Terminal prompt to set up './setup.sh' (this installs the Python dependencies into a `.venv` folder via `uv`)
+- Run the script - either at the Terminal with `uv run python ofsted_ilacs_scrape.py`, or right click the script file and select 'Run Python File' (VS Code should offer to select the `.venv` interpreter `./setup.sh` just created - accept that if prompted, otherwise the run will fail with missing packages)
+- Download the now refreshed ofsted_csc_ilacs_overview.xlsx (Right click, download)
 - Close codespace (Github will auto-remove unused spaces later)
   
 ### Run notes (Admin)
