@@ -18,7 +18,7 @@ inspections_subfolder = 'inspection_reports'    # downloaded report pdfs
 import_la_data_path = 'import_data/la_lookup/'
 import_geo_data_path = 'import_data/geospatial/'
 geo_boundaries_filename = 'local_authority_districts_boundaries.json'
-sccm_graph_path = 'https://github.com/data-to-insight/ofsted-ilacs-scrape-tool/blob/main/README.md#smart-city-concept-model-sccm'
+sccm_graph_path = 'https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md#smart-city-concept-model-sccm'
 
 #
 # Ofsted site/page admin settings
@@ -818,7 +818,11 @@ def process_provider_links(provider_links):
         # Get the child page content
         child_url = 'https://reports.ofsted.gov.uk' + link['href']
         child_soup = get_soup(child_url)
-        
+        if child_soup is None:
+            # get_soup already retried internally - a stale/broken provider link (or a
+            # persistent network issue) shouldn't crash the whole run, just this one LA.
+            logging.error(f"Failed to fetch provider page for '{la_name_str}' (urn {urn}): {child_url}")
+            continue
 
         # Find all publication links in the provider's child page
         pdf_links = child_soup.find_all('a', {'class': 'publication-link'})
@@ -1227,7 +1231,7 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
     <a href="{export_summary_filename}.xlsx">download here</a> as an .xlsx file.
     <br/>Data summary is based on the original <i>ILACS Outcomes Summary</i> published periodically by the ADCS:
     <a href="https://adcs.org.uk/inspection/article/ilacs-outcomes-summary">https://adcs.org.uk/inspection/article/ilacs-outcomes-summary</a>.
-    <a href="https://github.com/data-to-insight/ofsted-ilacs-scrape-tool/blob/main/README.md">Read the tool/project background details and future work.</a>.<br/>
+    <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md">Read the tool/project background details and future work.</a>.<br/>
     Exploratory efforts towards alligning this tools context with <a href="https://www.smartcityconceptmodel.com">Smart Cities Concept Model (SCCM)</a> : <a href="{sccm_graph_path}" target="_blank">viewable here</a>.
     """
 
@@ -1237,7 +1241,11 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
     redcar and cleveland,[inspection_framework, inspection_date], knowsley,[inspector_name], stoke-on-trent,[inspector_name]<br/>
     <a href="mailto:{d2i_contact_email}?subject=Ofsted-Scrape-Tool">Feedback</a> on specific problems|inaccuracies|suggestions welcomed.*
     """
-    data = data[column_order]
+    # .copy() avoids a SettingWithCopyWarning below - selecting a subset of columns like
+    # this leaves pandas unsure whether `data` is a view onto the original DataFrame or an
+    # independent copy, and the writes just below (title-casing, dropping columns) need it
+    # to definitely be independent.
+    data = data[column_order].copy()
 
     # Convert specified columns to title case
     title_case_cols = ['local_authority', 'inspector_name']
