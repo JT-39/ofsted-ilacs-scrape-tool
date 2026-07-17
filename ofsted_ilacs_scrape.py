@@ -20,14 +20,6 @@ import_geo_data_path = 'import_data/geospatial/'
 geo_boundaries_filename = 'local_authority_districts_boundaries.json'
 sccm_graph_path = 'https://github.com/data-to-insight/ofsted-ilacs-scrape-tool/blob/main/README.md#smart-city-concept-model-sccm'
 
-# scrape inspection grade/data from pdf reports
-pdf_data_capture = True # True is default (scrape within pdf inspection reports for inspection results etc)
-                        # This impacts run time E.g False == ~1m20 / True == ~ 4m10
-                        # False == only pdfs/list of LA's+link to most recent exported. Not inspection results.
-
-
-
-
 #
 # Ofsted site/page admin settings
 
@@ -484,8 +476,12 @@ def extract_inspection_data_update(pdf_content, urn=None, la_name=None, pdf_file
             - 'care_leavers_grade': The care leavers grade.
 
     Raises:
-        ValueError: If the PDF content is not valid or cannot be processed correctly.
-        
+        Various exceptions are possible on a malformed/unusual PDF (e.g. IndexError,
+        PyPDF2 read errors) - this function doesn't catch them itself. The caller,
+        process_provider_links, wraps its call to this function in try/except so a
+        single bad PDF logs an error and gets placeholder values rather than aborting
+        the rest of the scrape run.
+
     Note:
         This function expects the input PDF to contain specific sections specifically
         the inspection judgements to be on page 1 (page[0]) 
@@ -509,9 +505,13 @@ def extract_inspection_data_update(pdf_content, urn=None, la_name=None, pdf_file
 
         # # #################
         # # # dev-in-progress
+        # # These functions (get_sentiment_and_topics, get_sentiment_category,
+        # # get_sentiment_and_sentiment_by_theme, plot_filtered_topics) live in
+        # # admin/sentiment_experiment.py, not this file - they'd need importing
+        # # from there (and textblob/nltk/gensim installed) if this is picked back up.
 
         # # Generate inspection sentiment score
-        # # 
+        # #
 
         # # Call the get_sentiment_and_topics function
         # sentiment_val, key_inspection_themes_lst = get_sentiment_and_topics(buffer, report_sentiment_ignore_words)
@@ -752,11 +752,10 @@ def process_provider_links(provider_links):
         provider_links (list): A list of BeautifulSoup Tag objects representing provider links.
 
     Returns:
-        list: A list of dictionaries containing URN, local authority, inspection link, and, if enabled, additional inspection data.
+        list: A list of dictionaries containing URN, local authority, inspection link, and inspection judgement data.
     """
-    
+
     data = []
-    global pdf_data_capture # Bool flag
     global root_export_folder
     global inspections_subfolder
 
@@ -823,104 +822,91 @@ def process_provider_links(provider_links):
                     report_published_date = format_date(report_published_date_str, '%d %B %Y', '%d/%m/%y')
 
                     # Now get the in-document data
-                    if pdf_data_capture:
-                        # Opt1 : ~x4 slower runtime
-                        # Only here if we have set PDF text scrape flag to True
-                        # Turn this off, speeds up script if we only need the inspection documents themselves to be retrieved
+                    # Scrape inside the pdf inspection reports
+                    # inspection_data_dict = extract_inspection_data(pdf_content)
+                    try:
+                        inspection_data_dict = extract_inspection_data_update(
+                            pdf_content, urn=urn, la_name=la_name_str, pdf_filename=filename
+                        )
+                    except Exception as e:
+                        # One LA's oddly-formatted PDF shouldn't take down the whole scrape run -
+                        # log it and carry on with placeholder values for this LA only.
+                        logging.error(f"Failed to extract inspection data for '{la_name_str}' (urn {urn}, file '{filename}'): {e}")
+                        inspection_data_dict = {
+                            'inspector_name': None,
+                            'overall_inspection_grade': 'data_unreadable',
+                            'inspection_start_date': None,
+                            'inspection_end_date': None,
+                            'inspection_framework': None,
+                            'impact_of_leaders_grade': 'data_unreadable',
+                            'help_and_protection_grade': 'data_unreadable',
+                            'care_leavers_grade': 'data_unreadable',
+                            'in_care_grade': 'data_unreadable',
+                            'table_rows_found': 0,
+                        }
 
-               
-                        # Scrape inside the pdf inspection reports
-                        # inspection_data_dict = extract_inspection_data(pdf_content)
-                        try:
-                            inspection_data_dict = extract_inspection_data_update(
-                                pdf_content, urn=urn, la_name=la_name_str, pdf_filename=filename
-                            )
-                        except Exception as e:
-                            # One LA's oddly-formatted PDF shouldn't take down the whole scrape run -
-                            # log it and carry on with placeholder values for this LA only.
-                            logging.error(f"Failed to extract inspection data for '{la_name_str}' (urn {urn}, file '{filename}'): {e}")
-                            inspection_data_dict = {
-                                'inspector_name': None,
-                                'overall_inspection_grade': 'data_unreadable',
-                                'inspection_start_date': None,
-                                'inspection_end_date': None,
-                                'inspection_framework': None,
-                                'impact_of_leaders_grade': 'data_unreadable',
-                                'help_and_protection_grade': 'data_unreadable',
-                                'care_leavers_grade': 'data_unreadable',
-                                'in_care_grade': 'data_unreadable',
-                                'table_rows_found': 0,
-                            }
-                    
+                    # Dict extract here for readability of returned data/onward
 
-                        # Dict extract here for readability of returned data/onward
+                    # inspection basics
+                    overall_effectiveness = inspection_data_dict['overall_inspection_grade']
+                    inspector_name = inspection_data_dict['inspector_name']
+                    inspection_start_date = inspection_data_dict['inspection_start_date']
+                    inspection_end_date = inspection_data_dict['inspection_end_date']
+                    inspection_framework = inspection_data_dict['inspection_framework']
+                    # additional inspection grades if available
+                    impact_of_leaders_grade = inspection_data_dict['impact_of_leaders_grade']
+                    help_and_protection_grade = inspection_data_dict['help_and_protection_grade']
+                    # care_and_care_leavers_grade = inspection_data_dict['care_and_care_leavers_grade']
+                    # # updates to reflect post jan 2023 summary changes
+                    in_care_grade = inspection_data_dict['in_care_grade']
+                    care_leavers_grade = inspection_data_dict['care_leavers_grade']
 
-                        # inspection basics
-                        overall_effectiveness = inspection_data_dict['overall_inspection_grade']
-                        inspector_name = inspection_data_dict['inspector_name']
-                        inspection_start_date = inspection_data_dict['inspection_start_date']
-                        inspection_end_date = inspection_data_dict['inspection_end_date']
-                        inspection_framework = inspection_data_dict['inspection_framework']
-                        # additional inspection grades if available
-                        impact_of_leaders_grade = inspection_data_dict['impact_of_leaders_grade']
-                        help_and_protection_grade = inspection_data_dict['help_and_protection_grade']
-                        # care_and_care_leavers_grade = inspection_data_dict['care_and_care_leavers_grade']
-                        # # updates to reflect post jan 2023 summary changes
-                        in_care_grade = inspection_data_dict['in_care_grade']
-                        care_leavers_grade = inspection_data_dict['care_leavers_grade']
-
-                        # # NLP extract #sentiment
-                        # sentiment_score = inspection_data_dict['sentiment_score']
-                        # sentiment_summary = inspection_data_dict['sentiment_summary']
-                        # main_inspection_topics = inspection_data_dict['main_inspection_topics']
+                    # # NLP extract #sentiment
+                    # sentiment_score = inspection_data_dict['sentiment_score']
+                    # sentiment_summary = inspection_data_dict['sentiment_summary']
+                    # main_inspection_topics = inspection_data_dict['main_inspection_topics']
 
 
 
-                        # format dates for output                       
-                        inspection_start_date_formatted = format_date_for_report(inspection_start_date, "%d/%m/%Y")
-                        inspection_end_date_formatted = format_date_for_report(inspection_end_date, "%d/%m/%Y")
+                    # format dates for output
+                    inspection_start_date_formatted = format_date_for_report(inspection_start_date, "%d/%m/%Y")
+                    inspection_end_date_formatted = format_date_for_report(inspection_end_date, "%d/%m/%Y")
 
-                        # Format the provider directory as a file path link (in readiness for such as Excel)
-                        provider_dir_link = f"{provider_dir}"
+                    # Format the provider directory as a file path link (in readiness for such as Excel)
+                    provider_dir_link = f"{provider_dir}"
 
-                        
-                        provider_dir_link = provider_dir_link.replace('/', '\\') # fix for Windows systems
-                        
-                        # # TESTING  #DEBUG #sentiment
-                        # print(f"{la_name_str}, {overall_effectiveness},{impact_of_leaders_grade}, {help_and_protection_grade}, {in_care_grade}, {care_leavers_grade}, {inspection_start_date_formatted}")
 
-                        print(f"{local_authority}") # Gives listing console output during run in the format 'data/inspection reports/urn name_of_la'
+                    provider_dir_link = provider_dir_link.replace('/', '\\') # fix for Windows systems
 
-                        data.append({
-                                        'urn': urn,
-                                        'local_authority': la_name_str,
-                                        'inspection_link': inspection_link,
-                                        'overall_effectiveness_grade': overall_effectiveness,
-                                        'inspection_framework': inspection_framework,
-                                        'inspector_name': inspector_name,
-                                        'inspection_start_date': inspection_start_date_formatted,
-                                        'inspection_end_date': inspection_end_date_formatted,
-                                        'publication_date': report_published_date,
-                                        'local_link_to_all_inspections': provider_dir_link,
-                                        'impact_of_leaders_grade': impact_of_leaders_grade,
-                                        'help_and_protection_grade': help_and_protection_grade,
-                                        
-                                        # 'care_and_care_leavers_grade': care_and_care_leavers_grade,
-                                        'in_care_grade': in_care_grade, # This now becomes the care_and_care_leavers_grade if a pre Jan 2023 inspection
-                                        'care_leavers_grade': care_leavers_grade,
+                    # # TESTING  #DEBUG #sentiment
+                    # print(f"{la_name_str}, {overall_effectiveness},{impact_of_leaders_grade}, {help_and_protection_grade}, {in_care_grade}, {care_leavers_grade}, {inspection_start_date_formatted}")
 
-                                        # 'sentiment_score': sentiment_score,
-                                        # 'sentiment_summary': sentiment_summary,
-                                        # 'main_inspection_topics': main_inspection_topics
+                    print(f"{local_authority}") # Gives listing console output during run in the format 'data/inspection reports/urn name_of_la'
 
-                                    })
-                        
-                    else:
-                        # Opt2 : ~x4 faster runtime
-                        # Only grab the data/docs we can get direct off the Ofsted page 
-                        data.append({'urn': urn, 'local_authority': local_authority, 'inspection_link': inspection_link})
+                    data.append({
+                                    'urn': urn,
+                                    'local_authority': la_name_str,
+                                    'inspection_link': inspection_link,
+                                    'overall_effectiveness_grade': overall_effectiveness,
+                                    'inspection_framework': inspection_framework,
+                                    'inspector_name': inspector_name,
+                                    'inspection_start_date': inspection_start_date_formatted,
+                                    'inspection_end_date': inspection_end_date_formatted,
+                                    'publication_date': report_published_date,
+                                    'local_link_to_all_inspections': provider_dir_link,
+                                    'impact_of_leaders_grade': impact_of_leaders_grade,
+                                    'help_and_protection_grade': help_and_protection_grade,
 
-                    
+                                    # 'care_and_care_leavers_grade': care_and_care_leavers_grade,
+                                    'in_care_grade': in_care_grade, # This now becomes the care_and_care_leavers_grade if a pre Jan 2023 inspection
+                                    'care_leavers_grade': care_leavers_grade,
+
+                                    # 'sentiment_score': sentiment_score,
+                                    # 'sentiment_summary': sentiment_summary,
+                                    # 'main_inspection_topics': main_inspection_topics
+
+                                })
+
                     found_inspection_link = True # Flag to ensure data reporting on only the most recent inspection
     return data
 
