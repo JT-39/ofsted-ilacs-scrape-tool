@@ -69,7 +69,6 @@ import json
 import time
 import random
 import logging
-import warnings
 from datetime import datetime, timedelta
 
 # Third party
@@ -89,33 +88,10 @@ except ModuleNotFoundError:
 
 # -- removed -- 101125
 # PyMuPDF, depreciated use
-# textblob, nltk, scikit learn, gensim, only referenced in commented sections
+# textblob, nltk, scikit learn, gensim - only referenced by the sentiment-analysis reference
+# code in admin/sentiment_experiment.py (unused, not part of the active pipeline)
 # jinja2, pyyaml, networkx, pydot, depreciated use
 # unused RequestException only import replaced with explicit exceptions, RequestException kept
-
-
-## Note: 
-## sentiment analysis needing further work/on hold and related processing blocks also commented
-# import nltk
-# nltk.download('punkt')      # tokeniser models/sentence segmentation
-# nltk.download('stopwords')  # stop words ready for text analysis|NLP preprocessing
-# nltk.download('punkt_tab')  # added 120824 RH - as work-around fix textblob.exceptions.MissingCorpusError line 1384, in get_sentiment_and_topics
-
-# #sentiment
-# # nlp stuff for sentiment
-# try:
-#     from textblob import TextBlob
-#     from gensim import corpora, models
-#     # sh "/Applications/Python 3.11/Install Certificates.command"
-# except ModuleNotFoundError:
-#     print("install 'textblob' and 'gensim' using pip")
-
-# #sentiment
-# try:
-#     from sklearn.metrics.pairwise import cosine_similarity
-#     from sklearn.feature_extraction.text import CountVectorizer
-# except ModuleNotFoundError:
-#     print("install 'scikit-learn' using pip")
 
 
 # session browser headers (global)
@@ -131,9 +107,9 @@ with open('output.log', 'w'):
     # comment out if maintaining ongoing/historic log
     pass
 
-# Keep warnings quiet unless priority
+# Keep the noisy pdfbox logger quiet; leave Python warnings (DeprecationWarning etc.)
+# switched on so upcoming library breakage shows up before it becomes a hard failure.
 logging.getLogger('org.apache.pdfbox').setLevel(logging.ERROR)
-warnings.filterwarnings('ignore')
 
 logging.basicConfig(filename='output.log', level=logging.INFO, format='%(asctime)s - %(message)s')
 
@@ -313,36 +289,6 @@ def format_date_for_report(date_obj, output_format_str):
         return ""
 
 
-def extract_inspection_grade(row, column_name):
-    """
-    Extracts the grade from the given row and column name. If the grade contains
-    the phrase "requires improvement", it now returns the cleaned-up value.
-    
-    Args:
-        row (pd.Series): A row from a Pandas DataFrame.
-        column_name (str): The name of the column containing the grade.
-    
-    Returns:
-        str: The extracted grade.
-    
-    Raises:
-        ValueError: If the grade value cannot be converted to a string.
-    """
-    try:
-        grade = str(row[column_name]).replace('\n', ' ').strip().lower()
-
-        if "requires improvement" in grade:
-            # Some RI text has further comment that we don't want, i.e. 'RI, *to become good*' 
-            grade = "requires improvement"
-        return grade
-    except Exception as e:
-        grade = f"Unknown value type : {grade}"
-        error_msg = f"original error: {str(e)}, unknown value found: \"unknown : {grade}\""
-        raise ValueError(error_msg)
-
-
-
-
 
 
 def fix_invalid_judgement_table_structure(df):
@@ -440,9 +386,12 @@ def fix_misalligned_judgement_table(df):
 
     
     # Create a placeholder DataFrame
+    # grade dtype is explicitly object (not the float64 pandas would infer from all-NaN) since
+    # we assign string grades into it below - assigning a str into a float64 column raises a
+    # FutureWarning ("incompatible dtype") that will become a hard error in a future pandas version.
     corrected_df = pd.DataFrame({
         "judgement": known_judgements,
-        "grade": [np.nan] * len(known_judgements)  # Fill with NaNs
+        "grade": pd.Series([np.nan] * len(known_judgements), dtype=object)  # Fill with NaNs
     })
 
     # Grade cleaning
@@ -454,7 +403,7 @@ def fix_misalligned_judgement_table(df):
     # Convert any empty strings to NaN
     df.loc[df['grade'] == '', 'grade'] = np.nan
     # Replace 'nan' strings with actual NaN values
-    df['grade'].replace('nan', np.nan, inplace=True)
+    df['grade'] = df['grade'].replace('nan', np.nan)
     
 
     # Note: This line might not be required anymore as potentially duplicated elsewhere. To review/remove.
@@ -477,12 +426,21 @@ def fix_misalligned_judgement_table(df):
 
 
     # Assign grades to the correct judgements in placeholder df
+    # Guarded by length checks - an unusually-formatted report can yield fewer than
+    # the expected number of grades, and indexing straight into `grades` would then
+    # raise IndexError and crash the whole run. Judgements with no matching grade
+    # simply keep the placeholder's default NaN.
+    if len(grades) < 3:
+        logging.warning(f"Only {len(grades)} grade(s) found in judgement table (expected at least 3): {grades}")
 
     # New 2023 sub-judgements (split in-care / care leavers)
-    corrected_df.loc[corrected_df['judgement'] == known_judgements[0], 'grade'] = grades[0] # "impact_of_leaders"
-    corrected_df.loc[corrected_df['judgement'] == known_judgements[1], 'grade'] = grades[1] # "help_and_protection"
-    corrected_df.loc[corrected_df['judgement'] == known_judgements[2], 'grade'] = grades[2] # "in_care" && "in_care_and_care_leavers"
-    
+    if len(grades) > 0:
+        corrected_df.loc[corrected_df['judgement'] == known_judgements[0], 'grade'] = grades[0] # "impact_of_leaders"
+    if len(grades) > 1:
+        corrected_df.loc[corrected_df['judgement'] == known_judgements[1], 'grade'] = grades[1] # "help_and_protection"
+    if len(grades) > 2:
+        corrected_df.loc[corrected_df['judgement'] == known_judgements[2], 'grade'] = grades[2] # "in_care" && "in_care_and_care_leavers"
+
     if len(grades) > 3:
         corrected_df.loc[corrected_df['judgement'] == known_judgements[3], 'grade'] = grades[3] # 'care_leavers"
     
@@ -520,10 +478,7 @@ def extract_inspection_data_update(pdf_content):
             - 'help_and_protection_grade': The help and protection grade.
             - 'in_care_grade': The in care grade.
             - 'care_leavers_grade': The care leavers grade.
-            - 'sentiment_score': The sentiment score of the inspection report.
-            - 'sentiment_summary': The sentiment summary of the inspection report.
-            - 'main_inspection_topics': List of key inspection themes.
-    
+
     Raises:
         ValueError: If the PDF content is not valid or cannot be processed correctly.
         
@@ -680,54 +635,61 @@ def extract_inspection_data_update(pdf_content):
     # Extract inspection judgements/grades
     #
 
-    # Can be multiple tables on page 1(dodgy pdf formatting), ensure we only look at the 1st. 
-    # 
-    try:
-        df = pd.DataFrame(tables[0])
-    except IndexError:
-        print(tables)
-        print(first_page_text)
-        print("Error: No tables extracted from PDF. Check input data and extraction method.")
-        # exit with a non-zero code or handle err
-
-
-    # Some initial clean-up / consistency checks
-    df.columns = [col.lower().strip() for col in df.columns] # coerce consistent (headers)
-    df = df.astype(str).applymap(lambda s: s.lower()) # coerce consistent (data+types)
-    df = df.replace('\r', ' ', regex=True)
-
-
-    # Check/enforce the expected grades table structure exists
+    # Can be multiple tables on page 1(dodgy pdf formatting), ensure we only look at the 1st.
     #
+    # known_judgements also used as the placeholder fallback below if tabula found no table at all
+    # (matches the placeholder pattern already used in fix_invalid_judgement_table_structure)
+    known_judgements = ["impact_of_leaders", "help_and_protection", "in_care", "care_leavers", "overall_effectiveness"]
 
-    # Expected headers exist?
-    if not set(["judgement", "grade"]).issubset(df.columns):
-        # They dont't, so re-allign structure or replace(last resort
-        df = fix_invalid_judgement_table_structure(df)
-        #  If the df structure is unrecognisable/unfixable, a placeholder df with dummy vals is returned
+    if tables:
+        df = pd.DataFrame(tables[0])
+
+        # Some initial clean-up / consistency checks
+        df.columns = [col.lower().strip() for col in df.columns] # coerce consistent (headers)
+        df = df.astype(str).map(lambda s: s.lower()) # coerce consistent (data+types)
+        df = df.replace('\r', ' ', regex=True)
 
 
-    # We have a great deal of messy extracted data
-    # incl multi-line judgement strings that don't line up with grade. Need to address this.
-    df = fix_misalligned_judgement_table(df)  
- 
-    # Short-term fix
-    # We have some remaining known anomolies remaining in grade value structure
-    # This is a not-ideal brute force fix for those
-    columns_to_replace_grade_val = ['grade', 'overall_effectiveness', 'impact_of_leaders', 'help_and_protection', 'in_care', 'care_leavers', 'in_care_and_care_leavers']
+        # Check/enforce the expected grades table structure exists
+        #
 
-    for column in columns_to_replace_grade_val:
-        # handle just in-case we have a column naming mis-match 
-        if column in df.columns:
-            df[column] = df[column].replace({r'\b(be good\w*)\b': 'requires improvement', '(?i)nan': 'data_unreadable'}, regex=True)
-        else:
-            # [TESTING]
-            # print(f"Column '{column}' not found in the DataFrame.")
-            # print(df.columns)
+        # Expected headers exist?
+        if not set(["judgement", "grade"]).issubset(df.columns):
+            # They dont't, so re-allign structure or replace(last resort
+            df = fix_invalid_judgement_table_structure(df)
+            #  If the df structure is unrecognisable/unfixable, a placeholder df with dummy vals is returned
 
-            # Log the column names instead of printing
-            logging.warning(f"Inspection date {start_date_formatted} / Column '{column}' not found in the DataFrame.")
-            logging.info(df.columns)
+
+        # We have a great deal of messy extracted data
+        # incl multi-line judgement strings that don't line up with grade. Need to address this.
+        df = fix_misalligned_judgement_table(df)
+
+        # Short-term fix
+        # We have some remaining known anomolies remaining in grade value structure
+        # This is a not-ideal brute force fix for those
+        columns_to_replace_grade_val = ['grade', 'overall_effectiveness', 'impact_of_leaders', 'help_and_protection', 'in_care', 'care_leavers', 'in_care_and_care_leavers']
+
+        for column in columns_to_replace_grade_val:
+            # handle just in-case we have a column naming mis-match
+            if column in df.columns:
+                df[column] = df[column].replace({r'\b(be good\w*)\b': 'requires improvement', '(?i)nan': 'data_unreadable'}, regex=True)
+            else:
+                # [TESTING]
+                # print(f"Column '{column}' not found in the DataFrame.")
+                # print(df.columns)
+
+                # Log the column names instead of printing
+                logging.warning(f"Inspection date {start_date_formatted} / Column '{column}' not found in the DataFrame.")
+                logging.info(df.columns)
+    else:
+        # tabula found no table at all on page 1 - degrade gracefully rather than crash the whole run
+        # (this used to attempt pd.DataFrame(tables[0]), which raised an unhandled error further down
+        # for every LA processed after the one whose PDF failed)
+        logging.warning(f"No judgement table extracted from PDF (inspection dates: {start_date_formatted} to {end_date_formatted}) - using placeholder grades.")
+        df = pd.DataFrame({
+            "judgement": known_judgements,
+            "grade": ["data_unreadable"] * len(known_judgements)
+        })
 
 
     # Get judgement-grades as dict
@@ -859,7 +821,24 @@ def process_provider_links(provider_links):
                
                         # Scrape inside the pdf inspection reports
                         # inspection_data_dict = extract_inspection_data(pdf_content)
-                        inspection_data_dict = extract_inspection_data_update(pdf_content)
+                        try:
+                            inspection_data_dict = extract_inspection_data_update(pdf_content)
+                        except Exception as e:
+                            # One LA's oddly-formatted PDF shouldn't take down the whole scrape run -
+                            # log it and carry on with placeholder values for this LA only.
+                            logging.error(f"Failed to extract inspection data for '{la_name_str}' (urn {urn}): {e}")
+                            inspection_data_dict = {
+                                'inspector_name': None,
+                                'overall_inspection_grade': 'data_unreadable',
+                                'inspection_start_date': None,
+                                'inspection_end_date': None,
+                                'inspection_framework': None,
+                                'impact_of_leaders_grade': 'data_unreadable',
+                                'help_and_protection_grade': 'data_unreadable',
+                                'care_leavers_grade': 'data_unreadable',
+                                'in_care_grade': 'data_unreadable',
+                                'table_rows_found': 0,
+                            }
                     
 
                         # Dict extract here for readability of returned data/onward
@@ -1049,21 +1028,28 @@ def import_csv_from_folder(folder_name):
     
     
 
-def merge_and_select_columns(merge_to_df, merge_from_df, key_column, columns_to_add):
+def merge_and_select_columns(merge_to_df, merge_from_df, key_column, columns_to_add, how='left'):
     """
     Merges two dataframes and returns a merged dataframe with additional columns from
-    the second dataframe, without any duplicate columns. 
+    the second dataframe, without any duplicate columns.
 
     Parameters:
     df1 (pandas.DataFrame): The first dataframe to merge.
     df2 (pandas.DataFrame): The second dataframe to merge.
     key_column (str): The name of the key column to merge on.
     columns_to_add (list): A list of column names from df2 to add to df1.
+    how (str): Join type passed to DataFrame.merge. Defaults to 'left' so rows in
+        merge_to_df are always kept even if they have no match in merge_from_df
+        (an inner join would silently drop them instead).
 
     Returns:
     pandas.DataFrame: A new dataframe with merged data from df1 and selected columns from df2.
     """
-    merged = merge_to_df.merge(merge_from_df[columns_to_add + [key_column]], on=key_column)
+    unmatched = merge_to_df.loc[~merge_to_df[key_column].isin(merge_from_df[key_column]), key_column]
+    if not unmatched.empty:
+        logging.warning(f"{len(unmatched)} row(s) had no match on '{key_column}' in the lookup data: {unmatched.tolist()}")
+
+    merged = merge_to_df.merge(merge_from_df[columns_to_add + [key_column]], on=key_column, how=how)
     return merged
 
 
@@ -1333,237 +1319,10 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
 
 
 
-# #
-# #  In development section re: sentiment and other analysis 
-# #
-
-# # #Sentiment analysis additional stop/ignore words
-# # bespoke stop words list (minimise uneccessary common non-informative words in the sentiment analysis)
-
-# report_sentiment_ignore_words = [
-#     # Words related to the organisation and nature of the report
-#     'ofsted', 'inspection', 'report', 
-
-#     # Words related to the subjects of the report
-#     'child', 'children', 'children\'s', 'young', 'people', 
-
-#     # Words related to the services involved
-#     'service', 'services', 'childrens services', 'social', 'care', 
-
-#     # Words related to the providers of the services
-#     'staff', 'workers', 'managers',
-
-#     # Words related to performance and outcomes
-#     'achievement', 'achievements', 'outcome', 'outcomes', 'performance', 
-#     'improvement', 'improvements',
-
-#     # Words related to measures and standards
-#     'assessment', 'assessments', 'standard', 'standards', 
-#     'requirement', 'requirements', 'grade', 'grades', 
-
-#     # Words related to the local authority and policy
-#     'local', 'authority', 'policy', 'policies', 
-
-#     # Words related to specific aspects of care
-#     'help', 'support', 'provision', 'safeguarding', 'families', 
-#     'work', 'leavers',
-
-#     # Other
-#     'year'
-# ]
-
-
-def get_sentiment_and_topics(pdf_buffer, ignore_words=[]):
-    """
-    Analyse the sentiment and extract the top 3 topics from a PDF document.
-
-    This function takes a file-like buffer containing a PDF document as input and
-    performs the following tasks:
-    1. Reads the content of the PDF file using the PyPDF2 library.
-    2. Extracts the text from each page and concatenates it into a single string.
-    3. Performs sentiment analysis on the extracted text using the TextBlob library.
-       The sentiment polarity score ranges from -1 (most negative) to 1 (most positive).
-    4. Identifies key themes or topics from the extracted text using the Latent Dirichlet
-       Allocation (LDA) model from the Gensim library.
-    5. Returns the sentiment polarity score and the top 3 topics extracted from the PDF file.
-
-    Args:
-        pdf_buffer (io.BytesIO): A file(-like) buffer containing the PDF content.
-        ignore_words (list): A list of words to be ignored during sentiment analysis(so we can remove common words)
-
-    Returns:
-        tuple: A tuple containing the sentiment polarity score (float) and a list of
-               the top 3 topics (strings).
-    """
-
-    # Read the PDF stuff
-    reader = PyPDF2.PdfReader(pdf_buffer)
-    text = ''
-    for page in reader.pages:
-        text += page.extract_text()
-
-    # Perform sentiment analysis on the extracted text
-    blob = TextBlob(text)
-    sentiment = blob.sentiment.polarity
-    
-    # Identify key themes from the extracted text
-    # First, preprocess the text by tokenising and removing stop words
-    tokens = [word for sentence in blob.sentences for word in sentence.words]
-    stop_words = set(nltk.corpus.stopwords.words('english'))
-    stop_words.update(ignore_words)  # Add the inspections bespoke ignore words to the set of stop words
-    tokens = [word for word in tokens if word.lower() not in stop_words]
-    
-    # N.B Might need a further preprocessing step to normalise punctuation variations in the above
-
-
-    # Create a dictionary from the tokenised text
-    dictionary = corpora.Dictionary([tokens])
-    
-    # Create a corpus from the dictionary and the tokenised text
-    corpus = [dictionary.doc2bow(tokens)]
-    
-    # Create an LDA model from the corpus
-    lda_model = models.LdaModel(corpus, num_topics=3, id2word=dictionary)
-    
-    # Get the top 3 topics from the LDA model
-    topics = [lda_model.print_topic(topic_num) for topic_num in range(3)]
-
-    return sentiment, topics
-
-
-
-
-# This an updated/extended version of the above 
-def get_sentiment_and_sentiment_by_theme(pdf_buffer, theme1, theme2, theme3):
-    """
-    ****In progress****
-
-    Args:
-        
-
-    Returns:
-        
-    """
-
-    # Read the PDF stuff
-    reader = PyPDF2.PdfReader(pdf_buffer)
-    text = ''
-    for page in reader.pages:
-        text += page.extract_text()
-
-    # Perform sentiment analysis on the extracted text
-    blob = TextBlob(text)
-    sentiment = blob.sentiment.polarity
-    
-    # Identify key themes from the extracted text
-    # First, preprocess the text by tokenising and removing stop words
-    tokens = [word for sentence in blob.sentences for word in sentence.words]
-    stop_words = set(nltk.corpus.stopwords.words('english'))
-    tokens = [word for word in tokens if word.lower() not in stop_words]
-    
-    # Create a dictionary from the tokenised text
-    dictionary = corpora.Dictionary([tokens])
-    
-    # Create a corpus from the dictionary and the tokenised text
-    corpus = [dictionary.doc2bow(tokens)]
-
-
-    # Create an LDA model from the corpus with a higher number of topics
-    lda_model = models.LdaModel(corpus, num_topics=10, id2word=dictionary)
-    
-    # Get all topics from the LDA model
-    all_topics = [lda_model.print_topic(topic_num) for topic_num in range(10)]
-
-    # Define a function to calculate similarity between two strings
-    def string_similarity(s1, s2):
-        vectorizer = CountVectorizer().fit_transform([s1, s2])
-        vectors = vectorizer.toarray()
-        return cosine_similarity(vectors)[0, 1]
-
-    # Filter topics based on the similarity to the provided theme strings
-    filtered_topics = []
-    themes = [theme1, theme2, theme3]
-    for topic in all_topics:
-        for theme in themes:
-            if string_similarity(topic, theme) > 0.2:  # Adjust the threshold as needed
-                filtered_topics.append(topic)
-                break
-
-    return sentiment, filtered_topics
-
-def get_sentiment_category(sentiment):
-    """
-    Return the sentiment category based on the sentiment value.
-
-    Args:
-        sentiment (float): Sentiment value ranging from -1 (most negative) to 1 (most positive).
-
-    Returns:
-        str: The sentiment category.
-    """
-
-    if sentiment > 0.8:
-        return "Sentiment very positive"
-    elif 0.4 < sentiment <= 0.8:
-        return "Sentiment positive"
-    elif -0.4 <= sentiment <= 0.4:
-        return "Sentiment neutral"
-    elif -0.8 < sentiment <= -0.4:
-        return "Sentiment negative"
-    else:
-        return "Sentiment very negative"
-
-
-def extract_words(topic_string):
-    # Quick fix for when the sentiment weights per topic word not wanted.
-    words = re.findall(r'\*"(.*?)"', topic_string)
-    return words
-
-
-def plot_filtered_topics(filtered_topics):
-    """
-    Note: This only running if using func get_sentiment_and_sentiment_by_theme(pdf_buffer, theme1, theme2, theme3) 
-
-    Visualise filtered inspection topics as a bar chart.
-
-    This function takes a list of filtered topics as input and creates a bar chart
-    to visualise the weighted words for each topic.
-
-    Args:
-        filtered_topics (list): List of filtered topics as strings.
-
-    Returns:
-        None
-    """
-
-    import matplotlib.pyplot as plt # (intrim impot placement)
-
-    # extract words and their weights from a topic string
-    def extract_words_weights(topic_string):
-        words_weights = [ww.split('*') for ww in topic_string.split(' + ')]
-        return [(float(weight.strip()), word.strip(" '\"")) for weight, word in words_weights]
-
-    # Extract words and their weights from the filtered_topics
-    topics_words_weights = [extract_words_weights(topic) for topic in filtered_topics]
-
-    # Create the bar chart for each topic
-    for idx, (words_weights, topic) in enumerate(zip(topics_words_weights, filtered_topics), 1):
-        words, weights = zip(*words_weights)
-
-        fig, ax = plt.subplots()
-        ax.barh(words, weights)
-        ax.set_xlabel('Weights')
-        ax.set_title(f'Topic {idx}: {topic[:50]}...')
-        ax.invert_yaxis()  # Invert y-axis to show higher weights at the top
-
-        plt.show()
-
-
-#
-#
-#  END : In development section re: sentiment and other analysis 
-#
-#
+# The sentiment-analysis / topic-extraction functions that used to sit here (dead code -
+# unreachable, and would NameError on TextBlob/nltk/gensim which aren't installed) have
+# moved to admin/sentiment_experiment.py as reference-only code for the README's
+# "Future work" section. Nothing in the active pipeline calls them.
 
 
 while start < max_results:
