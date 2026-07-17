@@ -459,12 +459,16 @@ def fix_misalligned_judgement_table(df):
 
 
 
-def extract_inspection_data_update(pdf_content):
+def extract_inspection_data_update(pdf_content, urn=None, la_name=None, pdf_filename=None):
     """
     Function to extract key details from inspection reports PDF.
 
     Args:
-        pdf_content (bytes): The raw content of the PDF file to be processed. 
+        pdf_content (bytes): The raw content of the PDF file to be processed.
+        urn (str, optional): The provider's URN - only used to identify this PDF in
+            log messages if extraction hits a problem, not used in the extraction itself.
+        la_name (str, optional): The LA name - same purpose as urn above.
+        pdf_filename (str, optional): The source PDF's filename - same purpose as urn above.
 
     Returns:
         dict: A dictionary containing the extracted details. The dictionary keys are as follows:
@@ -685,7 +689,13 @@ def extract_inspection_data_update(pdf_content):
         # tabula found no table at all on page 1 - degrade gracefully rather than crash the whole run
         # (this used to attempt pd.DataFrame(tables[0]), which raised an unhandled error further down
         # for every LA processed after the one whose PDF failed)
-        logging.warning(f"No judgement table extracted from PDF (inspection dates: {start_date_formatted} to {end_date_formatted}) - using placeholder grades.")
+        logging.warning(
+            f"No judgement table extracted from PDF - using placeholder grades. "
+            f"urn={urn}, la='{la_name}', file='{pdf_filename}', "
+            f"inspection dates: {start_date_formatted} to {end_date_formatted}, "
+            f"inspector_name={inspector_name!r} (non-table fields still extracted OK if set), "
+            f"first_page_text_length={len(first_page_text)}"
+        )
         df = pd.DataFrame({
             "judgement": known_judgements,
             "grade": ["data_unreadable"] * len(known_judgements)
@@ -822,11 +832,13 @@ def process_provider_links(provider_links):
                         # Scrape inside the pdf inspection reports
                         # inspection_data_dict = extract_inspection_data(pdf_content)
                         try:
-                            inspection_data_dict = extract_inspection_data_update(pdf_content)
+                            inspection_data_dict = extract_inspection_data_update(
+                                pdf_content, urn=urn, la_name=la_name_str, pdf_filename=filename
+                            )
                         except Exception as e:
                             # One LA's oddly-formatted PDF shouldn't take down the whole scrape run -
                             # log it and carry on with placeholder values for this LA only.
-                            logging.error(f"Failed to extract inspection data for '{la_name_str}' (urn {urn}): {e}")
+                            logging.error(f"Failed to extract inspection data for '{la_name_str}' (urn {urn}, file '{filename}'): {e}")
                             inspection_data_dict = {
                                 'inspector_name': None,
                                 'overall_inspection_grade': 'data_unreadable',
