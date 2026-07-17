@@ -24,25 +24,25 @@ There is no test suite, linter, or build step in this repo — `main.py` is an u
 
 **System requirement**: `tabula-py` (PDF table extraction) needs a Java runtime (`default-jre`) on PATH — this is installed explicitly in the GitHub Actions workflow and should be present in Codespaces/devcontainer images.
 
-**Runtime**: the script takes ~1m20s with `pdf_data_capture = False` (link-list only) vs ~4m10s with `pdf_data_capture = True` (full per-PDF grade/date extraction) — see the config block at the top of `ofsted_ilacs_scrape.py`.
+**Runtime**: the script takes ~4m10s for a full run (every LA's most recent PDF is downloaded and parsed for grades/dates). There used to be a `pdf_data_capture` config flag for a faster link-list-only mode, but it was removed — it produced a DataFrame missing columns (`inspector_name`, the grade columns) that the rest of the pipeline (steps 5-8 below) unconditionally assumed existed, so it crashed rather than actually working, and nothing wired it up as a real option (no CLI flag/env var, just a hardcoded constant). If a faster local dev loop is needed again, prefer capping `max_results` (process fewer LAs through the *same* full pipeline) over skipping PDF parsing.
 
 ## Architecture / pipeline flow
 
-Everything lives in **`ofsted_ilacs_scrape.py`**, a single ~1760-line top-to-bottom script (config → imports → function defs → sequential execution at module scope — there's no `if __name__ == "__main__"` guard or class structure). Reading it top-to-bottom is reading the pipeline:
+Everything lives in **`ofsted_ilacs_scrape.py`**, a single ~1510-line top-to-bottom script (config → imports → function defs → sequential execution at module scope — there's no `if __name__ == "__main__"` guard or class structure). Reading it top-to-bottom is reading the pipeline:
 
-1. **Config block (top of file, lines ~1-60)** — output filenames, folder paths (`export_data/`, `import_data/`), the `pdf_data_capture` speed/completeness toggle, inspection duration thresholds used to classify short vs. standard inspections, and the Ofsted search URL/pagination params. Change behaviour here first before touching function bodies.
+1. **Config block (top of file, lines ~1-50)** — output filenames, folder paths (`export_data/`, `import_data/`), inspection duration thresholds used to classify short vs. standard inspections, and the Ofsted search URL/pagination params. Change behaviour here first before touching function bodies.
 
 2. **Scrape** (`get_soup`, `handle_pagination`) — paginates `reports.ofsted.gov.uk` search results (max 100 results/page) to collect every LA provider link.
 
-3. **Per-provider extraction** (`process_provider_links`) — for each LA provider page, finds all published inspection PDFs, identifies "children's services inspection" reports via the link's accessible/nonvisual text (fragile: depends on Ofsted's current markup/wording), downloads the **most recent** PDF's bytes, and writes it under `export_data/inspection_reports/<urn>_<la_name>/`.
+3. **Per-provider extraction** (`process_provider_links`) — for each LA provider page, finds all published inspection PDFs, identifies "children's services inspection" reports via the link's accessible/nonvisual text (fragile: depends on Ofsted's current markup/wording), downloads the **most recent** PDF's bytes, and writes it under `export_data/inspection_reports/<urn>_<la_name>/`. The call into PDF parsing (step 4) is wrapped in `try/except` — if extraction throws for one LA's PDF, that LA gets logged (`logging.error`, with URN/name/filename) and placeholder `"data_unreadable"` values instead of aborting the whole run.
 
-4. **PDF parsing** (`extract_inspection_data_update`, `fix_invalid_judgement_table_structure`, `fix_misalligned_judgement_table`, `extract_inspection_grade`) — this is the messiest and most change-prone part: pulls inspection dates, inspector name, framework type, and the judgement grades (overall effectiveness, impact of leaders, help & protection, in care, care leavers) out of inconsistently-formatted PDF tables via `tabula`/`PyPDF2`. Ofsted's report layout has changed over time (notably a Jan 2023 summary restructuring — `in_care_grade`/`care_leavers_grade` replace the older combined `care_and_care_leavers_grade`), so this code has version-specific branching and known per-LA extraction bugs (see README "Known Bugs" — southend-on-sea, nottingham, redcar and cleveland, knowsley, stoke-on-trent).
+4. **PDF parsing** (`extract_inspection_data_update`, `fix_invalid_judgement_table_structure`, `fix_misalligned_judgement_table`) — this is the messiest and most change-prone part: pulls inspection dates, inspector name, framework type, and the judgement grades (overall effectiveness, impact of leaders, help & protection, in care, care leavers) out of inconsistently-formatted PDF tables via `tabula`/`PyPDF2`. Ofsted's report layout has changed over time (notably a Jan 2023 summary restructuring — `in_care_grade`/`care_leavers_grade` replace the older combined `care_and_care_leavers_grade`), so this code has version-specific branching and known per-LA extraction bugs (see README "Known Bugs" — southend-on-sea, nottingham, redcar and cleveland, knowsley, stoke-on-trent). If `tabula` finds no table at all, or a report yields fewer grade rows than expected, this degrades to placeholder `"data_unreadable"`/`NaN` values (logged via `logging.warning`) rather than raising — see the `known_judgements`-based placeholder pattern shared across these functions.
 
 5. **Assemble** — results collected into `data` (list of dicts) then `ilacs_inspection_summary_df` (pandas DataFrame). This DataFrame is the pipeline's central object for the rest of the script.
 
-6. **Enrich from flat files** (`import_csv_from_folder`, `merge_and_select_columns`, `reposition_columns`) — joins in `import_data/la_lookup/Provider_data_lookup.csv` (historic LA codes, ONS region identifiers, CMS system) keyed on `urn`. Geospatial enrichment (`read_json_to_dataframe`, `import_data/geospatial/*.json`, for choropleth/map use) exists but is **commented out / in progress** — LA boundary data doesn't cleanly map to ONS codes yet.
+6. **Enrich from flat files** (`import_csv_from_folder`, `merge_and_select_columns`, `reposition_columns`) — joins in `import_data/la_lookup/Provider_data_lookup.csv` (historic LA codes, ONS region identifiers, CMS system) keyed on `urn`. `merge_and_select_columns` left-joins by default and logs (`logging.warning`) any `urn`s with no lookup match, rather than silently dropping them. Geospatial enrichment (`read_json_to_dataframe`, `import_data/geospatial/*.json`, for choropleth/map use) exists but is **commented out / in progress** — LA boundary data doesn't cleanly map to ONS codes yet.
 
-7. **Sentiment analysis** (`get_sentiment_and_topics`, `get_sentiment_category`, `plot_filtered_topics`, etc.) — an **on-hold/experimental enrichment**, mostly commented out of the active run. Where present in output it's Excel-only (excluded from the HTML page as not yet trustworthy). Don't rely on `textblob`/`gensim`/`nltk`/`sklearn` imports actually running — they're guarded by `try/except ModuleNotFoundError` and largely unused in the current pipeline.
+7. **Sentiment analysis** — not part of the active pipeline at all. The functions (`get_sentiment_and_topics`, `get_sentiment_category`, `plot_filtered_topics`, etc.) live in **`admin/sentiment_experiment.py`**, moved out of the main script since they were dead code there (unreachable — every call site was commented out — and would `NameError` on `textblob`/`nltk`/`gensim`, none of which are installed). Kept as reference material for the README's "Future work" section, not imported or run by anything.
 
 8. **Export** (`save_data_update`, `save_to_html`) — writes:
    - `ofsted_csc_ilacs_overview.xlsx` at repo root (full dataset, via `xlsxwriter`, with the `local_link_to_all_inspections` column as an active hyperlink to that LA's downloaded PDFs).
@@ -50,7 +50,7 @@ Everything lives in **`ofsted_ilacs_scrape.py`**, a single ~1760-line top-to-bot
 
 ## Output data — what's actually in the table
 
-One row per Local Authority (153 rows currently), keyed on `urn`, describing that LA's **most recent published** ILACS inspection. The `.xlsx` is the full table (20 columns); `index.html` shows a trimmed, presentation-formatted subset (see `column_order`, `ofsted_ilacs_scrape.py:1750`) with hyperlinked report/URN columns and title-cased text.
+One row per Local Authority (153 rows currently), keyed on `urn`, describing that LA's **most recent published** ILACS inspection. The `.xlsx` is the full table (20 columns); `index.html` shows a trimmed, presentation-formatted subset (see `column_order`, `ofsted_ilacs_scrape.py:1499`) with hyperlinked report/URN columns and title-cased text.
 
 | Column | Source | Meaning |
 |---|---|---|
@@ -67,7 +67,7 @@ One row per Local Authority (153 rows currently), keyed on `urn`, describing tha
 | `publication_date` | scrape (parsed from the PDF filename) | when Ofsted published the report |
 | `local_link_to_all_inspections` | scrape | filesystem path to that LA's folder under `export_data/inspection_reports/` — an active hyperlink in the `.xlsx` only (dropped from `index.html`, since the full PDF archive isn't published to GitHub Pages) |
 
-Sentiment/topic columns (`sentiment_score`, `sentiment_summary`, `main_inspection_topics`, `inspectors_median_sentiment_score`) exist in the code but are currently commented out of the active run (see step 7) — don't expect them in current output.
+Sentiment/topic columns (`sentiment_score`, `sentiment_summary`, `main_inspection_topics`, `inspectors_median_sentiment_score`) are referenced by small commented-out breadcrumbs in the main script (marking where the `admin/sentiment_experiment.py` functions would plug back in, see step 7) but are not produced by anything currently — don't expect them in output.
 
 ## Key external links
 
@@ -77,7 +77,7 @@ Sentiment/topic columns (`sentiment_score`, `sentiment_summary`, `main_inspectio
 - **Published output (GitHub Pages)** — https://data-to-insight.github.io/ofsted-ilacs-scrape-tool/.
 - **Smart Cities Concept Model** reference (background for `sccm.yml`) — `https://www.smartcityconceptmodel.com`.
 
-These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_text` (`ofsted_ilacs_scrape.py:1189-1204`) and in the config block (`ofsted_ilacs_scrape.py:41`) — update both places if a source URL changes.
+These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_text` (`ofsted_ilacs_scrape.py:1165-1180`) and in the config block (`ofsted_ilacs_scrape.py:33`) — update both places if a source URL changes.
 
 ### Key data conventions
 - **`urn`** (Ofsted's unique provider reference) is the primary join key throughout — always coerced to `int64`/numeric before merges.
@@ -88,6 +88,8 @@ These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_tex
 ### Supporting files (not part of the main pipeline)
 - **`admin/generate_sccm_graph.py`** — regenerates `sccm_graph_static.svg` from `sccm.yml` (the Smart City Concept Model entity/relationship graph shown in the README) using `networkx`/`graphviz`. Run manually, not part of the scrape.
 - **`sccm.yml`** — source of truth for the SCCM entities/relationships; edit this, then regenerate the SVG, if the conceptual model changes.
+- **`admin/validate_scrape_output.py`** — the CI sanity check described under "CI / deployment" below; also runnable manually.
+- **`admin/sentiment_experiment.py`** — unused reference code for sentiment/topic analysis on inspection PDFs (see step 7 above); not imported by anything.
 
 ## CI / deployment
 
@@ -95,7 +97,7 @@ These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_tex
 
 Between the scrape step and the commit-back step, the workflow runs `admin/validate_scrape_output.py` — a stdlib-only sanity check (row count, required columns, file sizes) that fails the job rather than publishing an obviously broken scrape to `main`. It also checks what fraction of LAs have no real `overall_effectiveness_grade` (still `data_unreadable`/missing): over 10% fails the job (`::error::`, likely a systemic break rather than the usual handful of known per-LA quirks — see README "Known Bugs"), any failures at all emit a `::warning::` GitHub Actions annotation without blocking the publish. Run it manually with `uv run python admin/validate_scrape_output.py` after a local run if you want the same check.
 
-Manual run instructions for non-admin users are in the README ("Script admin notes"): open a Codespace on `main`, run `./setup.sh` (`chmod +x setup.sh` first if permission denied), run `ofsted_ilacs_scrape.py`, download the refreshed `.xlsx`.
+Manual run instructions for non-admin users are in the README ("Script admin notes"): open a Codespace on `main`, run `./setup.sh` (`chmod +x setup.sh` first if permission denied), run `uv run python ofsted_ilacs_scrape.py`, download the refreshed `.xlsx`.
 
 ## Known limitations to keep in mind
 
