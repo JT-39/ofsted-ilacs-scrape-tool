@@ -172,6 +172,50 @@ def get_soup(url, retries=3, base_delay=5):
     return None
 
 
+def get_pdf_content(url, retries=3, base_delay=5):
+    """
+    Download a PDF's raw bytes, with the same session reuse and backoff retry
+    strategy as get_soup() above - added after a real CI run crashed the whole
+    scrape on a mid-download connection reset from a single PDF fetch that had
+    no error handling or retry at all (see process_provider_links).
+
+    Args:
+        url (str): the PDF's URL
+        retries (int): max retry attempts
+        base_delay (int): delay in secs before retry
+
+    Returns:
+        bytes or None
+    """
+    timeout_seconds = 30  # PDFs are bigger than the search-result HTML pages get_soup() fetches
+
+    for attempt in range(retries):
+        try:
+            response = session.get(url, timeout=timeout_seconds)
+            response.raise_for_status()  # any HTTP errors?
+            return response.content
+
+        except requests.Timeout:
+            print(f"[Timeout] Attempt {attempt + 1}: {url}")
+        except requests.HTTPError as e:
+            print(f"[HTTP error] {e}")  # end retries on client and server errors
+            return None
+        except RequestException as e:
+            print(f"[Request error] {e}")
+        except Exception as e:
+            print(f"[Unexpected error] {e}")
+            return None
+
+        if attempt < retries - 1:
+            # exponential backoff + jitter, same reasoning as get_soup()
+            delay = (base_delay * (2 ** attempt)) + random.uniform(0, 2)
+            print(f"Retrying in {delay:.1f}s...")
+            time.sleep(delay)
+
+    print("Max retry attempts reached.")
+    return None
+
+
 
 def clean_provider_name(name):
     """
@@ -799,9 +843,16 @@ def process_provider_links(provider_links):
                 filename = nonvisual_text.replace(', pdf', '') + '.pdf'
 
 
-                # # Turn this OFF to minimise data 
-                # # Download and stores locally each relevant PDF! 
-                pdf_content = requests.get(pdf_link['href']).content
+                # # Turn this OFF to minimise data
+                # # Download and stores locally each relevant PDF!
+                pdf_content = get_pdf_content(pdf_link['href'])
+                if pdf_content is None:
+                    # Download failed even after retries (e.g. a mid-request connection
+                    # reset) - skip this publication link rather than crashing the whole
+                    # run. If this was the most recent report, the next iteration will
+                    # try the LA's next-most-recent one instead.
+                    logging.error(f"Failed to download PDF for '{la_name_str}' (urn {urn}): {pdf_link['href']}")
+                    continue
                 # with open(os.path.join(provider_dir, filename), 'wb') as f:
                 #     f.write(pdf_content)
                 # ## END data reduction
