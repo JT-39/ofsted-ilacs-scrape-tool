@@ -36,6 +36,9 @@ We're working to address these, these are:
 - knowsley, [inspector_name]
 - stoke-on-trent, [inspector_name]
 
+## Ofsted framework change (April 2026)
+This is not a bug: from around April 2026, Ofsted stopped including an overall effectiveness judgement in ILACS reports at all - the published report only lists the four sub-judgements (impact of leaders, help and protection, in care, care leavers), in the same order as before, with nothing renamed or added in its place. For any LA inspected since then, `overall_effectiveness_grade` will show `not_reported_post_reform` rather than a grade. This is expected and will apply to a growing number of LAs over time as re-inspections continue under the new framework - it's tracked separately from genuine extraction failures in `admin/validate_scrape_output.py` so it doesn't get flagged as one.
+
 ## Smart City Concept Model (SCCM)
 The terminology and relations shown here might not be fully alligned with the SCCM standard(s), this is a work-in-progress.<br/>
 <img src="./sccm_graph_static.svg" alt="SCCM Graph" title="Smart City Concept Model Graph" width="100%"> <br/>  
