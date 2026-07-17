@@ -248,7 +248,7 @@ metadata:
   version: 2.1
   last_updated: 2025-04-23
   author: Data to Insight
-  homepage: https://data-to-insight.github.io/ofsted-ilacs-scrape-tool/
+  homepage: https://jt-39.github.io/ofsted-ilacs-scrape-tool/
   related_projects:
     - https://data-to-insight.github.io/ofsted-send-scrape-tool/
     - https://data-to-insight.github.io/ofsted-jtai-scrape-tool/

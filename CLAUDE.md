@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A proof-of-concept web scraper that rebuilds the ADCS "ILACS Summary" (Ofsted Children's Social Care inspection results for all English Local Authorities) directly from `reports.ofsted.gov.uk`, on-demand rather than waiting for the periodic ADCS publication. It's a single-script pipeline, not an application with a framework — code readability/hackability was prioritised over architecture, and the script has grown organically to handle inconsistencies in the source data.
 
-Published output: https://data-to-insight.github.io/ofsted-ilacs-scrape-tool/
+Published output: https://jt-39.github.io/ofsted-ilacs-scrape-tool/
 
 ## Running the tool
 
@@ -74,7 +74,7 @@ Sentiment/topic columns (`sentiment_score`, `sentiment_summary`, `main_inspectio
 - **Ofsted reports search** (scrape entry point) — `https://reports.ofsted.gov.uk/` — `search_url`/`pagination_param` in the config block build the "Local Authority Children's Services" filtered search URL this script paginates.
 - **Individual inspection report PDFs** — served from `https://files.ofsted.gov.uk/v1/file/<id>`; this is what `inspection_link` points to and what gets downloaded into `export_data/inspection_reports/`.
 - **ADCS ILACS Outcomes Summary** (the periodic publication this project re-creates on-demand) — `https://adcs.org.uk/inspection/article/ilacs-outcomes-summary`.
-- **Published output (GitHub Pages)** — https://data-to-insight.github.io/ofsted-ilacs-scrape-tool/.
+- **Published output (GitHub Pages)** — https://jt-39.github.io/ofsted-ilacs-scrape-tool/.
 - **Smart Cities Concept Model** reference (background for `sccm.yml`) — `https://www.smartcityconceptmodel.com`.
 
 These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_text` (`ofsted_ilacs_scrape.py:1165-1180`) and in the config block (`ofsted_ilacs_scrape.py:33`) — update both places if a source URL changes.
@@ -95,7 +95,7 @@ These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_tex
 
 Two workflows, deliberately kept separate:
 
-- **`.github/workflows/gh_refresh_gpage.yml`** ("Daily ILACS Scrape & Deploy") — the publish job. Triggers on `push`/`schedule`/`workflow_dispatch` against `main` (**not** `pull_request` — see below), runs the scraper, commits the refreshed `index.html` + `.xlsx` back to `main`, and deploys `index.html` to GitHub Pages. **Per the README, the scheduled auto-run is not currently working reliably** — the script is being run manually (via Codespaces + `./setup.sh` + running the script + push) as a workaround. If asked to fix "the daily refresh isn't happening," this workflow/schedule is the place to look, not the scrape logic itself.
+- **`.github/workflows/gh_refresh_gpage.yml`** ("Daily ILACS Scrape & Deploy") — the publish job. Triggers on `push`/`schedule`/`workflow_dispatch` against `main` (**not** `pull_request` — see below), runs the scraper, commits the refreshed `index.html` + `.xlsx` back to `main`, then stages just those two files into `_site/` and hands them to a separate `deploy` job (via `actions/upload-artifact`/`download-artifact`, since GitHub Actions jobs don't share a filesystem) which publishes them with `peaceiris/actions-gh-pages@v3`. The `deploy` job deliberately does **not** check out the repo or set `publish_dir` to the raw checkout — earlier it had no checkout step at all, so `publish_dir: ./` pointed at an empty workspace and the copy silently failed every run (the job still reported "success"; `gh-pages` only ever contained `.nojekyll`, no real content). If GitHub Pages looks broken/empty again, check the artifact upload/download step names still match (`gh-pages-site`) before assuming it's a new bug. **Per the README, the scheduled auto-run has historically been unreliable** — the script was being run manually (via Codespaces + `./setup.sh` + running the script + push) as a workaround; the git-push race (see below) and the deploy job above were both found and fixed as likely causes, but this hasn't yet been confirmed reliable over time. If asked to fix "the daily refresh isn't happening," this workflow/schedule is the place to look, not the scrape logic itself.
 - **`.github/workflows/pr_check.yml`** ("PR Check - Scrape & Validate") — runs on `pull_request` against `main`. Checks out the PR's own branch (unlike the daily job, which hardcodes `ref: main`), runs the same scrape + validate steps, but never commits or pushes anything. This exists so a PR that breaks the pipeline is actually caught, without touching `main`.
 
 These used to be one workflow with `pull_request` as an extra trigger on the daily job - that always checked out and pushed to `main` regardless of which event fired it, so a PR run tested nothing (it ignored the PR's actual changes) and could race the real push-triggered run: both PR #1 and PR #2's `pull_request`-triggered runs failed with `git push` rejected (`cannot lock ref`/`fetch first`) because `main` had moved on (from the PR being merged) by the time the redundant PR-triggered scrape finished. Split into two workflows to fix this - if this regresses, check that `gh_refresh_gpage.yml` still has no `pull_request` trigger before assuming it's a new bug.
