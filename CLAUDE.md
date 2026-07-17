@@ -46,6 +46,37 @@ Everything lives in **`ofsted_ilacs_scrape.py`**, a single ~1760-line top-to-bot
    - `ofsted_csc_ilacs_overview.xlsx` at repo root (full dataset, via `xlsxwriter`, with the `local_link_to_all_inspections` column as an active hyperlink to that LA's downloaded PDFs).
    - `index.html` at repo root (a reduced `column_order` subset for the public GitHub Pages site — see the `column_order` list near the end of the script if adding/removing web-visible fields).
 
+## Output data — what's actually in the table
+
+One row per Local Authority (153 rows currently), keyed on `urn`, describing that LA's **most recent published** ILACS inspection. The `.xlsx` is the full table (20 columns); `index.html` shows a trimmed, presentation-formatted subset (see `column_order`, `ofsted_ilacs_scrape.py:1750`) with hyperlinked report/URN columns and title-cased text.
+
+| Column | Source | Meaning |
+|---|---|---|
+| `urn` | scrape | Ofsted's unique provider reference — primary key |
+| `la_code`, `region_code`, `ltla23cd` | `Provider_data_lookup.csv` (step 6) | historic LA number, ONS region code, ONS local-authority-district code |
+| `stat_neighbours`, `stat_neighbour_judgement` | `Provider_data_lookup.csv` + `map_neighbour_grades` | that LA's statistical neighbour LA codes, and each neighbour's most recent overall grade — for peer comparison |
+| `local_authority` | scrape (`clean_provider_name`) | normalised LA name |
+| `inspection_link` | scrape | direct URL to the source PDF on `files.ofsted.gov.uk` (the underlying inspection report) |
+| `overall_effectiveness_grade`, `impact_of_leaders_grade`, `help_and_protection_grade`, `in_care_grade`, `care_leavers_grade` | PDF extraction (step 4) | the ILACS judgement grades (`outstanding`/`good`/`requires improvement`/`inadequate`) — `in_care_grade`/`care_leavers_grade` replace the older pre-Jan-2023 combined `care_and_care_leavers_grade` |
+| `inspection_framework` | PDF extraction | `short` or `standard`, derived from inspection duration vs. the config thresholds |
+| `inspector_name` | PDF extraction | lead inspector, lower-cased/whitespace-normalised for grouping |
+| `inspectors_inspections_count` | computed | how many LAs in this run that same inspector has led — a rough workload/coverage indicator, not from the PDF |
+| `inspection_start_date`, `inspection_end_date` | PDF extraction | on-site inspection dates |
+| `publication_date` | scrape (parsed from the PDF filename) | when Ofsted published the report |
+| `local_link_to_all_inspections` | scrape | filesystem path to that LA's folder under `export_data/inspection_reports/` — an active hyperlink in the `.xlsx` only (dropped from `index.html`, since the full PDF archive isn't published to GitHub Pages) |
+
+Sentiment/topic columns (`sentiment_score`, `sentiment_summary`, `main_inspection_topics`, `inspectors_median_sentiment_score`) exist in the code but are currently commented out of the active run (see step 7) — don't expect them in current output.
+
+## Key external links
+
+- **Ofsted reports search** (scrape entry point) — `https://reports.ofsted.gov.uk/` — `search_url`/`pagination_param` in the config block build the "Local Authority Children's Services" filtered search URL this script paginates.
+- **Individual inspection report PDFs** — served from `https://files.ofsted.gov.uk/v1/file/<id>`; this is what `inspection_link` points to and what gets downloaded into `export_data/inspection_reports/`.
+- **ADCS ILACS Outcomes Summary** (the periodic publication this project re-creates on-demand) — `https://adcs.org.uk/inspection/article/ilacs-outcomes-summary`.
+- **Published output (GitHub Pages)** — https://data-to-insight.github.io/ofsted-ilacs-scrape-tool/.
+- **Smart Cities Concept Model** reference (background for `sccm.yml`) — `https://www.smartcityconceptmodel.com`.
+
+These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_text` (`ofsted_ilacs_scrape.py:1189-1204`) and in the config block (`ofsted_ilacs_scrape.py:41`) — update both places if a source URL changes.
+
 ### Key data conventions
 - **`urn`** (Ofsted's unique provider reference) is the primary join key throughout — always coerced to `int64`/numeric before merges.
 - **`la_code`** is the older/historic LA number, brought in via the lookup CSV for backwards-compatible use cases.
