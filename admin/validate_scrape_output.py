@@ -19,6 +19,14 @@ README's "Known Bugs" list - so:
     annotation - visible in the GitHub Actions/PR checks UI - without
     blocking the daily publish.
 
+From ~April 2026, Ofsted stopped including an overall effectiveness judgement
+in ILACS reports at all (confirmed against real post-reform reports - see
+fix_misalligned_judgement_table's 'not_reported_post_reform' handling in
+ofsted_ilacs_scrape.py). Those LAs are reported separately, informationally,
+and never count towards the failure rate - unlike genuine extraction
+failures, this is an expected, permanent, and growing state as more LAs get
+re-inspected under the new framework, not a bug to alert on.
+
 Run manually with: python admin/validate_scrape_output.py
 """
 
@@ -39,13 +47,20 @@ REQUIRED_HEADERS = [
 
 # Fraction of LAs allowed to have no real overall effectiveness grade before this
 # is treated as a hard failure rather than just the handful of already-known
-# per-LA extraction quirks (see README "Known Bugs").
+# per-LA extraction quirks (see README "Known Bugs"). Post-reform LAs (see below)
+# are excluded from this entirely, so this threshold only ever fires for genuine
+# extraction breakage.
 FAILURE_RATE_THRESHOLD = 0.10
 
 # How a "failed extraction" grade cell renders in index.html: pandas' to_html()
 # renders missing values as the literal string "NaN", and the crash-safety
 # fallback in extract_inspection_data_update fills in "data_unreadable".
 FAILED_GRADE_VALUES = {"", "nan", "data_unreadable", "none"}
+
+# Ofsted stopped reporting this judgement from ~April 2026 - see
+# fix_misalligned_judgement_table in ofsted_ilacs_scrape.py. Expected and
+# permanent for affected LAs, not a failure - tracked separately below.
+POST_REFORM_GRADE_VALUE = "not_reported_post_reform"
 
 
 class _TableParser(HTMLParser):
@@ -101,13 +116,14 @@ def gh_annotation(level, message):
 def check_html():
     errors = []
     warnings = []
+    info = []
 
     if not os.path.exists(HTML_PATH):
-        return [f"{HTML_PATH} was not generated"], []
+        return [f"{HTML_PATH} was not generated"], [], []
 
     size = os.path.getsize(HTML_PATH)
     if size < MIN_HTML_BYTES:
-        return [f"{HTML_PATH} is only {size} bytes - looks empty/broken"], []
+        return [f"{HTML_PATH} is only {size} bytes - looks empty/broken"], [], []
 
     html = open(HTML_PATH, encoding="utf-8").read()
 
@@ -125,11 +141,23 @@ def check_html():
     if not errors and "Local Authority" in parser.headers and "Overall Effectiveness Grade" in parser.headers:
         la_idx = parser.headers.index("Local Authority")
         grade_idx = parser.headers.index("Overall Effectiveness Grade")
-        failed_las = [
-            row[la_idx] if la_idx < len(row) else "<unknown>"
-            for row in parser.rows
-            if grade_idx >= len(row) or row[grade_idx].strip().lower() in FAILED_GRADE_VALUES
-        ]
+
+        failed_las = []
+        post_reform_las = []
+        for row in parser.rows:
+            la = row[la_idx] if la_idx < len(row) else "<unknown>"
+            value = row[grade_idx].strip().lower() if grade_idx < len(row) else ""
+            if value == POST_REFORM_GRADE_VALUE:
+                post_reform_las.append(la)
+            elif value in FAILED_GRADE_VALUES:
+                failed_las.append(la)
+
+        if post_reform_las:
+            info.append(
+                f"{len(post_reform_las)}/{row_count} LAs have no overall effectiveness grade "
+                f"because Ofsted stopped reporting one from ~April 2026 (not a failure): "
+                f"{', '.join(post_reform_las)}"
+            )
 
         if failed_las:
             failure_rate = len(failed_las) / row_count
@@ -146,7 +174,7 @@ def check_html():
             else:
                 warnings.append(message)
 
-    return errors, warnings
+    return errors, warnings, info
 
 
 def check_xlsx():
@@ -161,8 +189,11 @@ def check_xlsx():
 
 
 def main():
-    html_errors, html_warnings = check_html()
+    html_errors, html_warnings, html_info = check_html()
     errors = html_errors + check_xlsx()
+
+    for message in html_info:
+        print(f"INFO: {message}")
 
     for warning in html_warnings:
         gh_annotation("warning", warning)
