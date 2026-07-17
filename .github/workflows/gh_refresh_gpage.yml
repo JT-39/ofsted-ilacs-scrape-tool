@@ -3,11 +3,14 @@ name: Daily ILACS Scrape & Deploy
 on:
   push:
     branches: ["main"]
-  pull_request:
-    branches: ["main"]
   schedule:
     - cron: '0 5 * * *'   # daily at 05:00 UTC
   workflow_dispatch:       # allows manual runs
+  # Deliberately no `pull_request` trigger - this job always checks out and pushes to
+  # `main` regardless of which event fired it, so running it on a PR didn't test the
+  # PR's changes; it just started a second, redundant scrape-and-push-to-main run that
+  # could race the real push-triggered run (see .github/workflows/pr_check.yml instead,
+  # which actually runs against the PR's branch and never pushes anywhere).
 
 permissions:
   contents: write

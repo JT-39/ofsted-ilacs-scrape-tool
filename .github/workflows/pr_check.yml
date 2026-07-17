@@ -1,0 +1,50 @@
+name: PR Check - Scrape & Validate
+
+# Runs the full scrape against the PR's own branch and sanity-checks the output, so a PR
+# that breaks the pipeline is caught before merge. Deliberately separate from
+# gh_refresh_gpage.yml (the daily publish job): this workflow never commits or pushes
+# anything, so it can't race that job's push to main, and actions/checkout's default
+# behaviour on a pull_request event checks out the PR's actual code (unlike the daily
+# job, which hardcodes `ref: main`).
+
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  scrape-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      # 1️⃣ Checkout the PR's branch (actions/checkout defaults to the PR merge commit
+      # on a pull_request event - no `ref:` override needed, unlike gh_refresh_gpage.yml)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ Install system dependencies (Java for PDF scraping)
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-jre graphviz
+
+      # 3️⃣ Set up Python 3.12
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 4️⃣ Install Python dependencies (pyproject.toml/uv.lock is the single source of truth)
+      - name: Install Python dependencies
+        run: |
+          pip install uv
+          uv sync
+
+      # 5️⃣ Run scraper
+      - name: Run Python scraper
+        run: uv run python ofsted_ilacs_scrape.py
+
+      # 6️⃣ Sanity-check the scrape output
+      - name: Validate scrape output
+        run: uv run python admin/validate_scrape_output.py
