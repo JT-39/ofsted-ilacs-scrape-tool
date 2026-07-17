@@ -7,12 +7,24 @@ network blip cut the run short) fails the job instead of silently publishing
 a near-empty summary. Deliberately stdlib-only (no pandas/openpyxl) so it
 doesn't need extra dependencies installed.
 
+As well as the structural checks (file sizes, required columns, row count),
+this checks how many LAs have no real overall effectiveness grade (still
+"data_unreadable"/missing after the extract_inspection_data_update crash-safety
+fallback added for known-bad PDFs). A handful of these are expected - see the
+README's "Known Bugs" list - so:
+  - > FAILURE_RATE_THRESHOLD of LAs failing extraction fails the job (a jump
+    like that signals something systemic broke, not just an already-known
+    per-LA quirk).
+  - Any failures at all (even under the threshold) print a `::warning::`
+    annotation - visible in the GitHub Actions/PR checks UI - without
+    blocking the daily publish.
+
 Run manually with: python admin/validate_scrape_output.py
 """
 
 import os
-import re
 import sys
+from html.parser import HTMLParser
 
 HTML_PATH = "index.html"
 XLSX_PATH = "ofsted_csc_ilacs_overview.xlsx"
@@ -25,16 +37,77 @@ REQUIRED_HEADERS = [
     "URN", "Local Authority", "Inspection Link", "Overall Effectiveness Grade",
 ]
 
+# Fraction of LAs allowed to have no real overall effectiveness grade before this
+# is treated as a hard failure rather than just the handful of already-known
+# per-LA extraction quirks (see README "Known Bugs").
+FAILURE_RATE_THRESHOLD = 0.10
+
+# How a "failed extraction" grade cell renders in index.html: pandas' to_html()
+# renders missing values as the literal string "NaN", and the crash-safety
+# fallback in extract_inspection_data_update fills in "data_unreadable".
+FAILED_GRADE_VALUES = {"", "nan", "data_unreadable", "none"}
+
+
+class _TableParser(HTMLParser):
+    """Minimal <table> header/row extractor for pandas' to_html() output."""
+
+    def __init__(self):
+        super().__init__()
+        self.headers = []
+        self.rows = []
+        self._in_thead = False
+        self._in_tbody = False
+        self._current_row = None
+        self._current_cell_parts = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "thead":
+            self._in_thead = True
+        elif tag == "tbody":
+            self._in_tbody = True
+        elif tag == "th" and self._in_thead:
+            self._current_cell_parts = []
+        elif tag == "tr" and self._in_tbody:
+            self._current_row = []
+        elif tag == "td" and self._current_row is not None:
+            self._current_cell_parts = []
+
+    def handle_endtag(self, tag):
+        if tag == "thead":
+            self._in_thead = False
+        elif tag == "tbody":
+            self._in_tbody = False
+        elif tag == "th" and self._current_cell_parts is not None:
+            self.headers.append("".join(self._current_cell_parts).strip())
+            self._current_cell_parts = None
+        elif tag == "tr" and self._current_row is not None:
+            self.rows.append(self._current_row)
+            self._current_row = None
+        elif tag == "td" and self._current_cell_parts is not None:
+            self._current_row.append("".join(self._current_cell_parts).strip())
+            self._current_cell_parts = None
+
+    def handle_data(self, data):
+        if self._current_cell_parts is not None:
+            self._current_cell_parts.append(data)
+
+
+def gh_annotation(level, message):
+    """Print a GitHub Actions workflow-command annotation (visible in the
+    Actions/PR checks UI). No-op outside GitHub Actions beyond a plain print."""
+    print(f"::{level}::{message}")
+
 
 def check_html():
     errors = []
+    warnings = []
 
     if not os.path.exists(HTML_PATH):
-        return [f"{HTML_PATH} was not generated"]
+        return [f"{HTML_PATH} was not generated"], []
 
     size = os.path.getsize(HTML_PATH)
     if size < MIN_HTML_BYTES:
-        return [f"{HTML_PATH} is only {size} bytes - looks empty/broken"]
+        return [f"{HTML_PATH} is only {size} bytes - looks empty/broken"], []
 
     html = open(HTML_PATH, encoding="utf-8").read()
 
@@ -42,12 +115,38 @@ def check_html():
         if header not in html:
             errors.append(f"{HTML_PATH} is missing expected column '{header}'")
 
-    tbody_match = re.search(r"<tbody>(.*?)</tbody>", html, re.DOTALL)
-    row_count = len(re.findall(r"<tr", tbody_match.group(1))) if tbody_match else 0
+    parser = _TableParser()
+    parser.feed(html)
+    row_count = len(parser.rows)
     if row_count < MIN_ROWS:
         errors.append(f"{HTML_PATH} only has {row_count} LA rows (expected >= {MIN_ROWS})")
 
-    return errors
+    # Extraction-failure-rate check - only meaningful if the columns we need are present
+    if not errors and "Local Authority" in parser.headers and "Overall Effectiveness Grade" in parser.headers:
+        la_idx = parser.headers.index("Local Authority")
+        grade_idx = parser.headers.index("Overall Effectiveness Grade")
+        failed_las = [
+            row[la_idx] if la_idx < len(row) else "<unknown>"
+            for row in parser.rows
+            if grade_idx >= len(row) or row[grade_idx].strip().lower() in FAILED_GRADE_VALUES
+        ]
+
+        if failed_las:
+            failure_rate = len(failed_las) / row_count
+            message = (
+                f"{len(failed_las)}/{row_count} LAs ({failure_rate:.0%}) have no real "
+                f"overall effectiveness grade: {', '.join(failed_las)}"
+            )
+            if failure_rate > FAILURE_RATE_THRESHOLD:
+                errors.append(
+                    f"{message} - exceeds the {FAILURE_RATE_THRESHOLD:.0%} threshold, "
+                    f"which suggests something broke systemically rather than the usual "
+                    f"handful of known per-LA quirks"
+                )
+            else:
+                warnings.append(message)
+
+    return errors, warnings
 
 
 def check_xlsx():
@@ -62,9 +161,16 @@ def check_xlsx():
 
 
 def main():
-    errors = check_html() + check_xlsx()
+    html_errors, html_warnings = check_html()
+    errors = html_errors + check_xlsx()
+
+    for warning in html_warnings:
+        gh_annotation("warning", warning)
+        print(f"WARNING: {warning}")
 
     if errors:
+        for error in errors:
+            gh_annotation("error", error)
         print("Scrape output failed sanity checks:")
         for error in errors:
             print(f"  - {error}")

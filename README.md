@@ -102,9 +102,9 @@ This part of some ongoing work to access data we can use to enrich the Ofsted da
 
 
 ## Future work
-- We have started some early placeholder work on sentiment analysis of the inspection reports. At the moment, this is only shown in the Excel download summary (not on the web based summary to improve readability). The positive/negative sentiment within the inspection reports needs some further work developing both the thresholds and more detailed work on better understanding the report text. 
+- We have started some early placeholder work on sentiment analysis of the inspection reports. This is not currently included in either the Excel or web output - the functions live, unused, in `admin/sentiment_experiment.py` as a starting point. The positive/negative sentiment within the inspection reports needs some further work developing both the thresholds and more detailed work on better understanding the report text. 
 
-- Some of the in-progress efforts are included as a point of discuss or stepping stone for others to develop within the download .xlsx file. For example a set of columns detailing simplistic inspection sentiment analysis based on the language used in the most recent report (ref cols: sentiment_score, inspectors_median_sentiment_score, sentiment_summary, main_inspection_topics). *Note that the inclusion of these columns does not dictate that the scores are accurate, these additions are a starting point for discussion|suggestions and development!!*
+- Some of the in-progress efforts are included as a point of discuss or stepping stone for others to develop, in `admin/sentiment_experiment.py`. For example a set of columns detailing simplistic inspection sentiment analysis based on the language used in the most recent report (ref cols: sentiment_score, inspectors_median_sentiment_score, sentiment_summary, main_inspection_topics) - none of which are wired into the current pipeline or output. *Note that the inclusion of these columns does not dictate that the scores are accurate, these additions are a starting point for discussion|suggestions and development!!*
 
 - Geographical/Geospatial visualisations of results by region, la etc. are in progress. The basis for this is aready in place but some anomolies with how LA/counties boundary data is configured is an issue for some and thus the representation requires a bit more thought. 
 
@@ -121,11 +121,11 @@ This part of some ongoing work to access data we can use to enrich the Ofsted da
 ## Script admin notes
 Simplified notes towards repo/script admin processes and enabling/instructions for non-admin running. 
 ### Script run intructions (User)
-If looking to obtain a full instant refresh of the ilacs output, the ofsted_childrens_services_inspection_scrape.PY should be run. These instructions for running in the cloud/Github. 
+If looking to obtain a full instant refresh of the ilacs output, ofsted_ilacs_scrape.py should be run. These instructions for running in the cloud/Github. 
 - Create a new Codespace (on main)
-- Type run the following bash script at Terminal prompt to set up './setup.sh'
-- Run the script (can right click script file and select 'run in python....'
-- Download the now refreshed ofsted_childrens_services_inspection_scrape.XLSX (Right click, download)
+- Type run the following bash script at Terminal prompt to set up './setup.sh' (this installs the Python dependencies into a `.venv` folder via `uv`)
+- Run the script - either at the Terminal with `uv run python ofsted_ilacs_scrape.py`, or right click the script file and select 'Run Python File' (VS Code should offer to select the `.venv` interpreter `./setup.sh` just created - accept that if prompted, otherwise the run will fail with missing packages)
+- Download the now refreshed ofsted_csc_ilacs_overview.xlsx (Right click, download)
 - Close codespace (Github will auto-remove unused spaces later)
   
 ### Run notes (Admin)
