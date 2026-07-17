@@ -4,8 +4,9 @@
 # Install additional system-level dependencies/packages
 python3 -m pip install --upgrade pip
 
-# Install Python dependencies
-pip install -r requirements.txt
+# Install Python dependencies (pyproject.toml/uv.lock is the single source of truth)
+pip install uv
+uv sync
 
 echo "Installing system dependencies..."
 sudo apt-get update

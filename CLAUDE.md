@@ -10,12 +10,14 @@ Published output: https://data-to-insight.github.io/ofsted-ilacs-scrape-tool/
 
 ## Running the tool
 
+`pyproject.toml`/`uv.lock` is the single source of truth for Python dependencies (there is no separate `requirements.txt` to keep in sync).
+
 ```bash
-./setup.sh                    # installs requirements.txt + graphviz (system dep) + VS Code python ext
-# or, since this repo also has a uv-managed pyproject.toml/uv.lock:
+./setup.sh                    # uv sync + graphviz (system dep) + VS Code python ext
+# or directly:
 uv sync
 
-python ofsted_ilacs_scrape.py # runs the entire scrape -> extract -> enrich -> export pipeline
+uv run python ofsted_ilacs_scrape.py # runs the entire scrape -> extract -> enrich -> export pipeline
 ```
 
 There is no test suite, linter, or build step in this repo — `main.py` is an unrelated uv-scaffold placeholder ("Hello from ofsted-ilacs-scrape-tool!") and is not part of the actual pipeline. Validation of changes is done by running the full script and inspecting `output.log`, the console debug output (`🔍 DEBUG:`/`📊 DEBUG:` prefixed lines), and the generated `index.html` / `.xlsx`.
@@ -91,7 +93,7 @@ These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_tex
 
 `.github/workflows/gh_refresh_gpage.yml` ("Daily ILACS Scrape & Deploy") is intended to run the scraper daily (`cron: '0 5 * * *'`), commit the refreshed `index.html` + `.xlsx` back to `main`, and deploy `index.html` to GitHub Pages. **Per the README, the scheduled auto-run is not currently working reliably** — the script is being run manually (via Codespaces + `./setup.sh` + running the script + push) as a workaround. If asked to fix "the daily refresh isn't happening," this workflow/schedule is the place to look, not the scrape logic itself.
 
-Between the scrape step and the commit-back step, the workflow runs `admin/validate_scrape_output.py` — a stdlib-only sanity check (row count, required columns, file sizes) that fails the job rather than publishing an obviously broken scrape to `main`. Run it manually with `python admin/validate_scrape_output.py` after a local run if you want the same check.
+Between the scrape step and the commit-back step, the workflow runs `admin/validate_scrape_output.py` — a stdlib-only sanity check (row count, required columns, file sizes) that fails the job rather than publishing an obviously broken scrape to `main`. Run it manually with `uv run python admin/validate_scrape_output.py` after a local run if you want the same check.
 
 Manual run instructions for non-admin users are in the README ("Script admin notes"): open a Codespace on `main`, run `./setup.sh` (`chmod +x setup.sh` first if permission denied), run `ofsted_ilacs_scrape.py`, download the refreshed `.xlsx`.
 
