@@ -30,16 +30,16 @@
     <a href="ofsted_csc_ilacs_overview.xlsx">download here</a> as an .xlsx file.
     <br/>Data summary is based on the original <i>ILACS Outcomes Summary</i> published periodically by the ADCS:
     <a href="https://adcs.org.uk/inspection/article/ilacs-outcomes-summary">https://adcs.org.uk/inspection/article/ilacs-outcomes-summary</a>.
-    <a href="https://github.com/data-to-insight/ofsted-ilacs-scrape-tool/blob/main/README.md">Read the tool/project background details and future work.</a>.<br/>
-    Exploratory efforts towards alligning this tools context with <a href="https://www.smartcityconceptmodel.com">Smart Cities Concept Model (SCCM)</a> : <a href="https://github.com/data-to-insight/ofsted-ilacs-scrape-tool/blob/main/README.md#smart-city-concept-model-sccm" target="_blank">viewable here</a>.
+    <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md">Read the tool/project background details and future work.</a>.<br/>
     </p>
         <p>
     Disclaimer: This summary is built from scraped data direct from https://reports.ofsted.gov.uk/ published PDF inspection report files.
-    As a result of the nuances|variance within the inspection report content or PDF encoding, we're noting some problematic data extraction for a small number of LAs. Including: southend-on-sea, [overall, help_and_protection_grade,care_leavers_grade], nottingham,[inspection_framework, inspection_date], 
+    As a result of the nuances|variance within the inspection report content or PDF encoding, we're noting some problematic data extraction for a small number of LAs. Including: southend-on-sea, [overall, help_and_protection_grade,care_leavers_grade], nottingham,[inspection_framework, inspection_date],
     redcar and cleveland,[inspection_framework, inspection_date], knowsley,[inspector_name], stoke-on-trent,[inspector_name]<br/>
+    From around April 2026, Ofsted stopped publishing an overall effectiveness judgement in ILACS reports - LAs inspected since then will show "not reported post reform" for that column rather than a grade; this reflects a genuine change in what Ofsted report, not a scrape error.<br/>
     <a href="mailto:datatoinsight.enquiries@gmail.com?subject=Ofsted-Scrape-Tool">Feedback</a> on specific problems|inaccuracies|suggestions welcomed.*
     </p>
-        <p><b>Summary data last updated: 18 07 2026 08:04</b></p>
+        <p><b>Summary data last updated: 18 07 2026 17:42</b></p>
         <p><b>LA inspections last updated: []</b></p>
         <div class="container">
     <table border="1" class="dataframe">
@@ -48,7 +48,7 @@
       <th>URN</th>
       <th>La Code</th>
       <th>Region Code</th>
-      <th>LTLA23CD</th>
+      <th>La Code New</th>
       <th>Local Authority</th>
       <th>Inspection Link</th>
       <th>Overall Effectiveness Grade</th>
@@ -66,7 +66,7 @@
       <td>80426</td>
       <td>370</td>
       <td>YH</td>
-      <td>E08000016</td>
+      <td>E08000038</td>
       <td>Barnsley</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50231520">ofsted.gov.uk/50231520</a></td>
       <td>good</td>
@@ -242,7 +242,7 @@
       <td>80442</td>
       <td>825</td>
       <td>SE</td>
-      <td>E10000002</td>
+      <td>E06000060</td>
       <td>Buckinghamshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50276975">ofsted.gov.uk/50276975</a></td>
       <td>requires improvement</td>
@@ -466,7 +466,7 @@
       <td>2733690</td>
       <td>942</td>
       <td>NW</td>
-      <td>E10000006</td>
+      <td>E06000063</td>
       <td>Cumberland</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50262710">ofsted.gov.uk/50262710</a></td>
       <td>good</td>
@@ -562,7 +562,7 @@
       <td>2532283</td>
       <td>838</td>
       <td>SW</td>
-      <td>E10000009</td>
+      <td>E06000059</td>
       <td>Dorset</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50276411">ofsted.gov.uk/50276411</a></td>
       <td>outstanding</td>
@@ -933,7 +933,7 @@
       <td>E08000012</td>
       <td>Liverpool</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50306784">ofsted.gov.uk/50306784</a></td>
-      <td>NaN</td>
+      <td>not_reported_post_reform</td>
       <td>standard</td>
       <td>Teresa Godfrey</td>
       <td>11/05/2026</td>
@@ -997,7 +997,7 @@
       <td>E09000005</td>
       <td>Brent</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50304386">ofsted.gov.uk/50304386</a></td>
-      <td>NaN</td>
+      <td>not_reported_post_reform</td>
       <td>short</td>
       <td>Monique Lindsay</td>
       <td>27/04/2026</td>
@@ -1573,7 +1573,7 @@
       <td>E06000061</td>
       <td>North Northamptonshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50306548">ofsted.gov.uk/50306548</a></td>
-      <td>NaN</td>
+      <td>not_reported_post_reform</td>
       <td>standard</td>
       <td>David Cohen</td>
       <td>11/05/2026</td>
@@ -1618,7 +1618,7 @@
       <td>80530</td>
       <td>815</td>
       <td>YH</td>
-      <td>E10000023</td>
+      <td>E06000065</td>
       <td>North Yorkshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50226213">ofsted.gov.uk/50226213</a></td>
       <td>outstanding</td>
@@ -1938,7 +1938,7 @@
       <td>80551</td>
       <td>373</td>
       <td>YH</td>
-      <td>E08000019</td>
+      <td>E08000039</td>
       <td>Sheffield</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50231897">ofsted.gov.uk/50231897</a></td>
       <td>good</td>
@@ -2002,10 +2002,10 @@
       <td>80555</td>
       <td>933</td>
       <td>SW</td>
-      <td>E10000027</td>
+      <td>E06000066</td>
       <td>Somerset</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50304387">ofsted.gov.uk/50304387</a></td>
-      <td>NaN</td>
+      <td>not_reported_post_reform</td>
       <td>short</td>
       <td>Alison Smale</td>
       <td>27/04/2026</td>
@@ -2373,7 +2373,7 @@
       <td>E06000062</td>
       <td>West Northamptonshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50306547">ofsted.gov.uk/50306547</a></td>
-      <td>NaN</td>
+      <td>not_reported_post_reform</td>
       <td>standard</td>
       <td>Rebecca Dubbins</td>
       <td>11/05/2026</td>
@@ -2402,7 +2402,7 @@
       <td>2733698</td>
       <td>943</td>
       <td>NW</td>
-      <td>E10000006</td>
+      <td>E06000064</td>
       <td>Westmorland And Furness</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252261">ofsted.gov.uk/50252261</a></td>
       <td>good</td>
