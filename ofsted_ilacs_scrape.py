@@ -1374,6 +1374,8 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
 # "Future work" section. Nothing in the active pipeline calls them.
 
 
+last_page_was_full = False
+
 while start < max_results:
     # Construct URL for current chunk
     url = url_stem + search_url + pagination_param.format(start=start)
@@ -1395,11 +1397,25 @@ while start < max_results:
     if not provider_links:
         break  # no more results found
 
+    last_page_was_full = len(provider_links) == max_page_results
+
     # provider links
     data.extend(process_provider_links(provider_links))
 
     # continue on next batch (if there is)
     start += max_page_results
+else:
+    # Loop only reaches here if it ran out via `start < max_results` going false, rather than
+    # an explicit break - i.e. we hit the max_results cap, not a genuinely empty/last page. If
+    # the last page fetched was still full (max_page_results providers), that's a real signal
+    # there may be more LAs beyond the cap being silently truncated, not just a coincidence of
+    # the total landing exactly on a page boundary - see max_results' definition/comment above.
+    if last_page_was_full:
+        logging.warning(
+            f"Pagination stopped at max_results={max_results} but the last page fetched was "
+            f"still full ({max_page_results} providers) - there may be more LAs beyond this "
+            f"cap that were not scraped. Consider raising max_results."
+        )
 
 
 
