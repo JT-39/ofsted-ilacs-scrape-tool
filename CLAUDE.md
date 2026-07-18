@@ -82,6 +82,7 @@ These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_tex
 ### Key data conventions
 - **`urn`** (Ofsted's unique provider reference) is the primary join key throughout — always coerced to `int64`/numeric before merges.
 - **`la_code`** is the older/historic LA number, brought in via the lookup CSV for backwards-compatible use cases.
+- **`ltla23cd`** (from the lookup CSV) is the ONS/GSS local authority district code shown in the published output (`column_order`) — despite the "23" in its name it's kept current on a rolling basis, not frozen at its Dec-2023 vintage, so it gets updated whenever an LA's code changes (e.g. Barnsley E08000016→E08000038 and Sheffield E08000019→E08000039 from the April 2025 Barnsley and Sheffield (Boundary Change) Order). `admin/check_la_code_currency.py` is a manual, non-CI check for drift against the live ONS dataset. The lookup CSV deliberately keeps rows for defunct historic LAs (e.g. Cumbria, pre-2021 Northamptonshire, Poole) so other LAs' `stat_neighbours_previous` references stay resolvable — these never appear in the scraped output anyway, since that's a left join keyed on currently-scraped `urn`s.
 - Local authority names are normalised through `clean_provider_name` (lowercased, council/borough/district boilerplate stripped) — apply the same cleaning if adding new name-based joins, or names won't match.
 - Per-LA PDF export directories are named `<urn>_<cleaned_la_name>` under `export_data/inspection_reports/`.
 
@@ -89,6 +90,7 @@ These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_tex
 - **`admin/generate_sccm_graph.py`** — regenerates `sccm_graph_static.svg` from `sccm.yml` (the Smart City Concept Model entity/relationship graph shown in the README) using `networkx`/`graphviz`. Run manually, not part of the scrape.
 - **`sccm.yml`** — source of truth for the SCCM entities/relationships; edit this, then regenerate the SVG, if the conceptual model changes.
 - **`admin/validate_scrape_output.py`** — the CI sanity check described under "CI / deployment" below; also runnable manually.
+- **`admin/check_la_code_currency.py`** — manual, non-CI check for `Provider_data_lookup.csv`'s `ltla23cd` codes going stale against the live ONS Open Geography Portal "Local Authority Districts ... Names and Codes in England" dataset. Not wired into either GitHub Actions workflow — LA boundary changes are rare, government-order-driven events, not worth checking on every daily/PR run. Run manually with `uv run python admin/check_la_code_currency.py`.
 - **`admin/sentiment_experiment.py`** — unused reference code for sentiment/topic analysis on inspection PDFs (see step 7 above); not imported by anything.
 
 ## CI / deployment
