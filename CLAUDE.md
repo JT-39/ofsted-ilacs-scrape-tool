@@ -55,7 +55,7 @@ One row per Local Authority (153 rows currently), keyed on `urn`, describing tha
 | Column | Source | Meaning |
 |---|---|---|
 | `urn` | scrape | Ofsted's unique provider reference — primary key |
-| `la_code`, `region_code`, `ltla23cd` | `Provider_data_lookup.csv` (step 6) | historic LA number, ONS region code, ONS local-authority-district code |
+| `la_code`, `region_code`, `la_code_new` | `Provider_data_lookup.csv` (step 6) | historic LA number, ONS region code, current ONS/GSS local authority code |
 | `stat_neighbours`, `stat_neighbour_judgement` | `Provider_data_lookup.csv` + `map_neighbour_grades` | that LA's statistical neighbour LA codes, and each neighbour's most recent overall grade — for peer comparison |
 | `local_authority` | scrape (`clean_provider_name`) | normalised LA name |
 | `inspection_link` | scrape | direct URL to the source PDF on `files.ofsted.gov.uk` (the underlying inspection report) |
@@ -81,11 +81,13 @@ These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_tex
 ### Key data conventions
 - **`urn`** (Ofsted's unique provider reference) is the primary join key throughout — always coerced to `int64`/numeric before merges.
 - **`la_code`** is the older/historic LA number, brought in via the lookup CSV for backwards-compatible use cases.
+- **`la_code_new`** (from the lookup CSV) is the ONS/GSS local authority code shown in the published output (`column_order`) — "new" relative to the older numeric `la_code` scheme it succeeds, not a reference to any particular code vintage. It's kept current on a rolling basis, so it gets updated whenever an LA's code changes (e.g. Barnsley E08000016→E08000038 and Sheffield E08000019→E08000039 from the April 2025 Barnsley and Sheffield (Boundary Change) Order). It's the **sole** ONS-code column in the CSV — `lad23cd`, `ltla23cd`, and `ltla23_ons` used to duplicate the same value and were removed, since keeping several manually in sync invited exactly the kind of drift this column now tracks alone (Barnsley/Sheffield's 2025 codes were caught out of sync in one of these duplicate columns before the consolidation). `admin/check_la_code_currency.py` is a manual, non-CI check for drift against the live ONS dataset. The lookup CSV deliberately keeps rows for defunct historic LAs (e.g. Cumbria, pre-2021 Northamptonshire, Poole) so other LAs' `stat_neighbours_previous` references stay resolvable — these never appear in the scraped output anyway, since that's a left join keyed on currently-scraped `urn`s. Their `la_code_new` holds each one's own last-known/terminated code from just before it was abolished (Cumbria E10000006, Northamptonshire E10000021, Poole E06000029) for historic reference, not a current successor code — Cumbria and Northamptonshire each split into two current LAs with their own new codes (already reflected on those LAs' own rows), and Poole merged into Bournemouth, Christchurch and Poole (E06000058) rather than keeping its own code, so none of these three defunct codes are joinable to a single current LA today.
 - Local authority names are normalised through `clean_provider_name` (lowercased, council/borough/district boilerplate stripped) — apply the same cleaning if adding new name-based joins, or names won't match.
 - Per-LA PDF export directories are named `<urn>_<cleaned_la_name>` under `export_data/inspection_reports/`.
 
 ### Supporting files (not part of the main pipeline)
 - **`admin/validate_scrape_output.py`** — the CI sanity check described under "CI / deployment" below; also runnable manually.
+- **`admin/check_la_code_currency.py`** — manual, non-CI check for `Provider_data_lookup.csv`'s `la_code_new` codes going stale against the live ONS Open Geography Portal "Local Authority Districts ... Names and Codes in England" dataset. Not wired into either GitHub Actions workflow — LA boundary changes are rare, government-order-driven events, not worth checking on every daily/PR run. Run manually with `uv run python admin/check_la_code_currency.py`.
 - **`admin/sentiment_experiment.py`** — unused reference code for sentiment/topic analysis on inspection PDFs (see step 7 above); not imported by anything.
 
 ## CI / deployment
