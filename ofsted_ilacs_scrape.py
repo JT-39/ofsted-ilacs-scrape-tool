@@ -18,7 +18,6 @@ inspections_subfolder = 'inspection_reports'    # downloaded report pdfs
 import_la_data_path = 'import_data/la_lookup/'
 import_geo_data_path = 'import_data/geospatial/'
 geo_boundaries_filename = 'local_authority_districts_boundaries.json'
-sccm_graph_path = 'https://github.com/data-to-insight/ofsted-ilacs-scrape-tool/blob/main/README.md#smart-city-concept-model-sccm'
 
 #
 # Ofsted site/page admin settings
@@ -406,9 +405,11 @@ def fix_misalligned_judgement_table(df):
         ValueError: If the input DataFrame does not contain the necessary columns or the data cannot be processed correctly.
         
     Note:
-        This function makes certain assumptions about the structure and contents of the input DataFrame, 
+        This function makes certain assumptions about the structure and contents of the input DataFrame,
         including the presence of specific judgements and the order in which they appear.
         It also assumes that the 'overall effectiveness' judgement (if present) is the last relevant row in the DataFrame.
+        From ~April 2026, Ofsted stopped including an overall effectiveness judgement in ILACS
+        reports at all - see the 'not_reported_post_reform' branch below, not a parsing bug.
     """
 
     
@@ -459,6 +460,18 @@ def fix_misalligned_judgement_table(df):
 
         indices_to_remove = df.index[df.index > oe_index[0]]
         df = df.drop(indices_to_remove)
+
+    elif len(grades) == 4:
+        # From ~April 2026 Ofsted's ILACS reports stopped including an overall effectiveness
+        # judgement at all (confirmed against real reports - e.g. Brent, Liverpool, North
+        # Northamptonshire inspections dated Apr/May 2026 - the table is just the 4 sub-
+        # judgements below, in the same order as before, nothing renamed or reordered).
+        # Exactly 4 clean grades with no 'overall effectiveness' row found is a confident
+        # signal this is the new format, not a parsing failure - genuinely short/malformed
+        # tables (len(grades) != 4) still fall through to the NaN placeholder below,
+        # unchanged from before. See admin/validate_scrape_output.py for the matching
+        # exclusion of this value from the failure-rate check.
+        corrected_df.loc[corrected_df['judgement'] == 'overall_effectiveness', 'grade'] = 'not_reported_post_reform'
 
 
     # Assign grades to the correct judgements in placeholder df
@@ -818,7 +831,11 @@ def process_provider_links(provider_links):
         # Get the child page content
         child_url = 'https://reports.ofsted.gov.uk' + link['href']
         child_soup = get_soup(child_url)
-        
+        if child_soup is None:
+            # get_soup already retried internally - a stale/broken provider link (or a
+            # persistent network issue) shouldn't crash the whole run, just this one LA.
+            logging.error(f"Failed to fetch provider page for '{la_name_str}' (urn {urn}): {child_url}")
+            continue
 
         # Find all publication links in the provider's child page
         pdf_links = child_soup.find_all('a', {'class': 'publication-link'})
@@ -1227,17 +1244,21 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
     <a href="{export_summary_filename}.xlsx">download here</a> as an .xlsx file.
     <br/>Data summary is based on the original <i>ILACS Outcomes Summary</i> published periodically by the ADCS:
     <a href="https://adcs.org.uk/inspection/article/ilacs-outcomes-summary">https://adcs.org.uk/inspection/article/ilacs-outcomes-summary</a>.
-    <a href="https://github.com/data-to-insight/ofsted-ilacs-scrape-tool/blob/main/README.md">Read the tool/project background details and future work.</a>.<br/>
-    Exploratory efforts towards alligning this tools context with <a href="https://www.smartcityconceptmodel.com">Smart Cities Concept Model (SCCM)</a> : <a href="{sccm_graph_path}" target="_blank">viewable here</a>.
+    <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md">Read the tool/project background details and future work.</a>.<br/>
     """
 
     disclaimer_text = f"""
     Disclaimer: This summary is built from scraped data direct from https://reports.ofsted.gov.uk/ published PDF inspection report files.
-    As a result of the nuances|variance within the inspection report content or PDF encoding, we're noting some problematic data extraction for a small number of LAs. Including: southend-on-sea, [overall, help_and_protection_grade,care_leavers_grade], nottingham,[inspection_framework, inspection_date], 
+    As a result of the nuances|variance within the inspection report content or PDF encoding, we're noting some problematic data extraction for a small number of LAs. Including: southend-on-sea, [overall, help_and_protection_grade,care_leavers_grade], nottingham,[inspection_framework, inspection_date],
     redcar and cleveland,[inspection_framework, inspection_date], knowsley,[inspector_name], stoke-on-trent,[inspector_name]<br/>
+    From around April 2026, Ofsted stopped publishing an overall effectiveness judgement in ILACS reports - LAs inspected since then will show "not reported post reform" for that column rather than a grade; this reflects a genuine change in what Ofsted report, not a scrape error.<br/>
     <a href="mailto:{d2i_contact_email}?subject=Ofsted-Scrape-Tool">Feedback</a> on specific problems|inaccuracies|suggestions welcomed.*
     """
-    data = data[column_order]
+    # .copy() avoids a SettingWithCopyWarning below - selecting a subset of columns like
+    # this leaves pandas unsure whether `data` is a view onto the original DataFrame or an
+    # independent copy, and the writes just below (title-casing, dropping columns) need it
+    # to definitely be independent.
+    data = data[column_order].copy()
 
     # Convert specified columns to title case
     title_case_cols = ['local_authority', 'inspector_name']
@@ -1481,7 +1502,22 @@ grade_lookup = dict(zip(ilacs_inspection_summary_df["la_code"], ilacs_inspection
 # map stat_neighbours to include o_effectiveness grades
 def map_neighbour_grades(stat_neighbours):
     la_codes = stat_neighbours.split(",")  # csv to list
-    return [(int(la), grade_lookup.get(int(la), "Unknown")) for la in la_codes]  # tuples of (la_code, o_grade)
+
+    def lookup_grade(la_code):
+        # "Unknown" covers both a la_code this run has no data for at all, and (via the
+        # pd.isna check) one whose overall grade is a genuine NaN - kept as a single label
+        # since both mean "no usable grade for peer comparison". The 'not_reported_post_reform'
+        # sentinel (see fix_misalligned_judgement_table) gets its own label since it's an
+        # expected state, not a data gap, and conflating the two would look like more of the
+        # LAs are unread than really are.
+        grade = grade_lookup.get(la_code, "Unknown")
+        if grade == 'not_reported_post_reform':
+            return 'Not reported (2026 framework change)'
+        if pd.isna(grade):
+            return 'Unknown'
+        return grade
+
+    return [(int(la), lookup_grade(int(la))) for la in la_codes]  # tuples of (la_code, o_grade)
 
 # move the new col next to existing 
 ilacs_inspection_summary_df["stat_neighbour_judgement"] = ilacs_inspection_summary_df["stat_neighbours"].apply(map_neighbour_grades)
