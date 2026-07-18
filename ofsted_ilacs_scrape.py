@@ -1189,9 +1189,9 @@ def read_json_to_dataframe(file_path, exclude_fields=None):
 def replace_empty_ladcode_values(df, col1, col2):
     """
     Replace empty or NaN values in a specified DataFrame column with values from another column.
-    We need to replace null LADCODE/LAD23CD from any geospacial data added as those rows will later fail if 
-    not addressed. Some LA's have boundary data that does not conform to a single LAD23CD, so we 
-    replace it with a value from another col, here that usually equates to ONS rgn22cd or ltla23cd
+    We need to replace null LADCODE/LAD23CD from any geospacial data added as those rows will later fail if
+    not addressed. Some LA's have boundary data that does not conform to a single LAD23CD, so we
+    replace it with a value from another col, here that usually equates to ONS rgn22cd or la_code_new
 
     Parameters:
     - df (pd.DataFrame): The DataFrame in which the replacement operation will be performed.
@@ -1464,7 +1464,11 @@ ilacs_inspection_summary_df['urn'] = ilacs_inspection_summary_df['urn'].astype('
 local_authorities_lookup_df['urn'] = pd.to_numeric(local_authorities_lookup_df['urn'], errors='coerce')
 
 # Define what data is required to be merged in
-additional_data_cols = ['la_code', 'region_code', 'ltla23cd', 'stat_neighbours']
+# la_code_new is the ONS/GSS local authority code - the sole source of truth for this in
+# Provider_data_lookup.csv (lad23cd/ltla23cd/ltla23_ons were dropped as duplicates of this
+# column; keeping one authoritative column avoids the class of bug where one gets updated
+# on an LA boundary change and the others don't - see la_code_new's entry in CLAUDE.md).
+additional_data_cols = ['la_code', 'region_code', 'la_code_new', 'stat_neighbours']
 ilacs_inspection_summary_df = merge_and_select_columns(ilacs_inspection_summary_df, local_authorities_lookup_df, key_col, additional_data_cols)
 
 # re-organise column structure now with new col(s)
@@ -1501,11 +1505,18 @@ ilacs_inspection_summary_df = reposition_columns(ilacs_inspection_summary_df, "s
 # json_df = read_json_to_dataframe(import_geo_data_path+geo_boundaries_filename, exclude_fields)
 
 # # Ensure key column consistency
-# key_col = 'lad23cd'
-# json_df = replace_empty_ladcode_values(json_df, 'lad23cd', 'utla23cd') # for cases where ladcd doesnt exist for non-lad LA areas.
+# # NOTE: Provider_data_lookup.csv no longer has a lad23cd column (consolidated into
+# # la_code_new, see CLAUDE.md) - update this to key_col = 'la_code_new' if this block is
+# # ever revived. la_code_new is already populated for two-tier counties (their county-level
+# # code), so the replace_empty_ladcode_values step below may no longer be needed at all -
+# # check before reusing it, rather than assuming the old lad23cd blank-for-counties problem
+# # still applies. The separate utla23cd-not-in-geojson bug this line has is unrelated to
+# # that CSV cleanup and still needs its own fix.
+# key_col = 'la_code_new'
+# json_df = replace_empty_ladcode_values(json_df, 'la_code_new', 'utla23cd') # for cases where ladcd doesnt exist for non-lad LA areas.
 
 # # Define what data is required to be merged in
-# additional_data_cols = ['lad23cd', 'bng_e', 'bng_n', 'long', 'lat','coordinates']
+# additional_data_cols = ['la_code_new', 'bng_e', 'bng_n', 'long', 'lat','coordinates']
 # ilacs_inspection_summary_df = merge_and_select_columns(ilacs_inspection_summary_df, json_df, key_col, additional_data_cols)
 
 # # re-organise column structure now with new col(s)
@@ -1519,7 +1530,7 @@ ilacs_inspection_summary_df = reposition_columns(ilacs_inspection_summary_df, "s
 ## End enrichment 3 ##
 
 
-# json_df[json_df['lad23cd'].duplicated()]
+# json_df[json_df['la_code_new'].duplicated()]
 # print(json_df.columns)
 # print(ilacs_inspection_summary_df.columns)
 
@@ -1556,7 +1567,7 @@ save_data_update(ilacs_inspection_summary_df, export_summary_filename, file_type
 # Set up which cols to take forward onto the web front-end(and order of)
 # Remove for now until link fixed applied: 'local_link_to_all_inspections',
 column_order = [
-                'urn','la_code','region_code','ltla23cd','local_authority',
+                'urn','la_code','region_code','la_code_new','local_authority',
                 'inspection_link','overall_effectiveness_grade','inspection_framework','inspector_name',
                 'inspection_start_date',
                 'local_link_to_all_inspections',

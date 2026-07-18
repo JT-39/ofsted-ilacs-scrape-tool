@@ -1,7 +1,10 @@
 """
 Manual, non-CI staleness check for import_data/la_lookup/Provider_data_lookup.csv's
-'ltla23cd' column - the ONS/GSS local authority district code that ends up in the
-published output (see ltla23cd in ofsted_ilacs_scrape.py's column_order).
+'la_code_new' column - the ONS/GSS local authority code that ends up in the published
+output (see la_code_new in ofsted_ilacs_scrape.py's column_order). la_code_new is the
+sole ONS-code column in the lookup CSV; the old lad23cd/ltla23cd/ltla23_ons columns
+were dropped as duplicates of it to remove the class of bug where one gets updated on
+an LA boundary change and the others don't (see CLAUDE.md's "Key data conventions").
 
 Not run by either GitHub Actions workflow (gh_refresh_gpage.yml / pr_check.yml).
 LA boundary changes are rare, government-order-driven events (e.g. the April 2025
@@ -97,18 +100,18 @@ def main():
         ons_code = ons_codes.get(name.lower())
         if ons_code is None:
             continue  # no live match - treated as an expected historic/defunct LA, not a failure
-        csv_code = (row.get("ltla23cd") or "").strip()
+        csv_code = (row.get("la_code_new") or "").strip()
         if csv_code != ons_code:
             mismatches.append((name, csv_code or "(blank)", ons_code))
 
     if mismatches:
-        print(f"{len(mismatches)}/{len(rows)} LA(s) in {LOOKUP_CSV_PATH} have a stale/incorrect ltla23cd:")
+        print(f"{len(mismatches)}/{len(rows)} LA(s) in {LOOKUP_CSV_PATH} have a stale/incorrect la_code_new:")
         for name, csv_code, ons_code in mismatches:
             print(f"  {name}: csv has {csv_code}, ONS currently has {ons_code}")
-        print(f"Update lad23cd/ltla23cd/ltla23_ons in {LOOKUP_CSV_PATH} for these rows.")
+        print(f"Update la_code_new in {LOOKUP_CSV_PATH} for these rows.")
         sys.exit(1)
 
-    print(f"OK: no stale ltla23cd codes found among {len(rows)} row(s) matched against the live ONS dataset.")
+    print(f"OK: no stale la_code_new codes found among {len(rows)} row(s) matched against the live ONS dataset.")
 
 
 if __name__ == "__main__":
