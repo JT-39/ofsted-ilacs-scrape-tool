@@ -13,7 +13,7 @@ Published output: https://jt-39.github.io/ofsted-ilacs-scrape-tool/
 `pyproject.toml`/`uv.lock` is the single source of truth for Python dependencies (there is no separate `requirements.txt` to keep in sync).
 
 ```bash
-./setup.sh                    # uv sync + graphviz (system dep) + VS Code python ext
+./setup.sh                    # uv sync + VS Code python ext
 # or directly:
 uv sync
 
@@ -28,7 +28,7 @@ There is no test suite, linter, or build step in this repo — `main.py` is an u
 
 ## Architecture / pipeline flow
 
-Everything lives in **`ofsted_ilacs_scrape.py`**, a single ~1510-line top-to-bottom script (config → imports → function defs → sequential execution at module scope — there's no `if __name__ == "__main__"` guard or class structure). Reading it top-to-bottom is reading the pipeline:
+Everything lives in **`ofsted_ilacs_scrape.py`**, a single ~1600-line top-to-bottom script (config → imports → function defs → sequential execution at module scope — there's no `if __name__ == "__main__"` guard or class structure). Reading it top-to-bottom is reading the pipeline:
 
 1. **Config block (top of file, lines ~1-50)** — output filenames, folder paths (`export_data/`, `import_data/`), inspection duration thresholds used to classify short vs. standard inspections, and the Ofsted search URL/pagination params. Change behaviour here first before touching function bodies.
 
@@ -50,7 +50,7 @@ Everything lives in **`ofsted_ilacs_scrape.py`**, a single ~1510-line top-to-bot
 
 ## Output data — what's actually in the table
 
-One row per Local Authority (153 rows currently), keyed on `urn`, describing that LA's **most recent published** ILACS inspection. The `.xlsx` is the full table (20 columns); `index.html` shows a trimmed, presentation-formatted subset (see `column_order`, `ofsted_ilacs_scrape.py:1499`) with hyperlinked report/URN columns and title-cased text.
+One row per Local Authority (153 rows currently), keyed on `urn`, describing that LA's **most recent published** ILACS inspection. The `.xlsx` is the full table (20 columns); `index.html` shows a trimmed, presentation-formatted subset (see `column_order`, `ofsted_ilacs_scrape.py:1594`) with hyperlinked report/URN columns and title-cased text.
 
 | Column | Source | Meaning |
 |---|---|---|
@@ -75,9 +75,8 @@ Sentiment/topic columns (`sentiment_score`, `sentiment_summary`, `main_inspectio
 - **Individual inspection report PDFs** — served from `https://files.ofsted.gov.uk/v1/file/<id>`; this is what `inspection_link` points to and what gets downloaded into `export_data/inspection_reports/`.
 - **ADCS ILACS Outcomes Summary** (the periodic publication this project re-creates on-demand) — `https://adcs.org.uk/inspection/article/ilacs-outcomes-summary`.
 - **Published output (GitHub Pages)** — https://jt-39.github.io/ofsted-ilacs-scrape-tool/.
-- **Smart Cities Concept Model** reference (background for `sccm.yml`) — `https://www.smartcityconceptmodel.com`.
 
-These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_text` (`ofsted_ilacs_scrape.py:1165-1180`) and in the config block (`ofsted_ilacs_scrape.py:33`) — update both places if a source URL changes.
+These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_text` (`ofsted_ilacs_scrape.py:1241-1256`) and in the config block (`ofsted_ilacs_scrape.py:32`) — update both places if a source URL changes.
 
 ### Key data conventions
 - **`urn`** (Ofsted's unique provider reference) is the primary join key throughout — always coerced to `int64`/numeric before merges.
@@ -86,8 +85,6 @@ These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_tex
 - Per-LA PDF export directories are named `<urn>_<cleaned_la_name>` under `export_data/inspection_reports/`.
 
 ### Supporting files (not part of the main pipeline)
-- **`admin/generate_sccm_graph.py`** — regenerates `sccm_graph_static.svg` from `sccm.yml` (the Smart City Concept Model entity/relationship graph shown in the README) using `networkx`/`graphviz`. Run manually, not part of the scrape.
-- **`sccm.yml`** — source of truth for the SCCM entities/relationships; edit this, then regenerate the SVG, if the conceptual model changes.
 - **`admin/validate_scrape_output.py`** — the CI sanity check described under "CI / deployment" below; also runnable manually.
 - **`admin/sentiment_experiment.py`** — unused reference code for sentiment/topic analysis on inspection PDFs (see step 7 above); not imported by anything.
 
