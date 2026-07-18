@@ -18,7 +18,6 @@ inspections_subfolder = 'inspection_reports'    # downloaded report pdfs
 import_la_data_path = 'import_data/la_lookup/'
 import_geo_data_path = 'import_data/geospatial/'
 geo_boundaries_filename = 'local_authority_districts_boundaries.json'
-sccm_graph_path = 'https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md#smart-city-concept-model-sccm'
 
 #
 # Ofsted site/page admin settings
@@ -1246,7 +1245,6 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
     <br/>Data summary is based on the original <i>ILACS Outcomes Summary</i> published periodically by the ADCS:
     <a href="https://adcs.org.uk/inspection/article/ilacs-outcomes-summary">https://adcs.org.uk/inspection/article/ilacs-outcomes-summary</a>.
     <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md">Read the tool/project background details and future work.</a>.<br/>
-    Exploratory efforts towards alligning this tools context with <a href="https://www.smartcityconceptmodel.com">Smart Cities Concept Model (SCCM)</a> : <a href="{sccm_graph_path}" target="_blank">viewable here</a>.
     """
 
     disclaimer_text = f"""
