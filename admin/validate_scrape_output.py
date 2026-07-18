@@ -11,7 +11,7 @@ As well as the structural checks (file sizes, required columns, row count),
 this checks how many LAs have no real overall effectiveness grade (still
 "data_unreadable"/missing after the extract_inspection_data_update crash-safety
 fallback added for known-bad PDFs). A handful of these are expected - see the
-README's "Known Bugs" list - so:
+README's "Known limitations" section - so:
   - > FAILURE_RATE_THRESHOLD of LAs failing extraction fails the job (a jump
     like that signals something systemic broke, not just an already-known
     per-LA quirk).
@@ -47,7 +47,7 @@ REQUIRED_HEADERS = [
 
 # Fraction of LAs allowed to have no real overall effectiveness grade before this
 # is treated as a hard failure rather than just the handful of already-known
-# per-LA extraction quirks (see README "Known Bugs"). Post-reform LAs (see below)
+# per-LA extraction quirks (see README "Known limitations"). Post-reform LAs (see below)
 # are excluded from this entirely, so this threshold only ever fires for genuine
 # extraction breakage.
 FAILURE_RATE_THRESHOLD = 0.10
