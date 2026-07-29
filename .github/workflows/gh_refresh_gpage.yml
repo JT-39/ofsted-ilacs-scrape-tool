@@ -55,23 +55,27 @@ jobs:
       - name: Validate scrape output
         run: uv run python admin/validate_scrape_output.py
 
-      # 7️⃣ Commit and push updated files back to main
-      - name: Commit and push updated HTML and Excel
+      # 7️⃣ Commit and push updated files back to main. The inspection history CSV doubles
+      # as the incremental-scrape cache, so committing it is what makes the next daily run
+      # fast (only LAs with a genuinely new inspection re-download/re-parse anything).
+      # Newly downloaded report PDFs are committed too, keeping the in-repo archive current
+      # - incremental scraping means only genuinely new inspections add files.
+      - name: Commit and push updated outputs
         run: |
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
-          git add index.html ofsted_csc_ilacs_overview.xlsx
+          git add index.html ofsted_csc_ilacs_overview.xlsx ofsted_csc_ilacs_history.csv export_data/inspection_reports
           git commit -m "Daily update via workflow" || echo "No changes to commit"
           git push origin main
 
-      # 8️⃣ Stage just the two files GitHub Pages should serve - the `deploy` job below
+      # 8️⃣ Stage just the files GitHub Pages should serve - the `deploy` job below
       # runs on its own fresh runner with no checkout of its own, and publish_dir must
       # not be the raw repo checkout (that would publish source code and the ~144MB of
       # historic PDFs under export_data/ to the public site, not just the summary)
       - name: Prepare GitHub Pages content
         run: |
           mkdir -p _site
-          cp index.html ofsted_csc_ilacs_overview.xlsx _site/
+          cp index.html ofsted_csc_ilacs_overview.xlsx ofsted_csc_ilacs_history.csv _site/
 
       # 9️⃣ Hand the staged files off to the deploy job (separate runner, no shared filesystem)
       - name: Upload GitHub Pages artifact
@@ -84,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      # 🔟 Fetch the two files staged by the build job above
+      # 🔟 Fetch the files staged by the build job above
       - name: Download GitHub Pages artifact
         uses: actions/download-artifact@v4
         with:
