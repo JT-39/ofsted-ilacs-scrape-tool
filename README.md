@@ -70,7 +70,7 @@ The whole pipeline runs as a single Python script, `ofsted_ilacs_scrape.py`, rea
 
 Four things come out of a run:
 
-- **Web summary** (`index.html`) - a trimmed, published subset of the results (most recent inspection per LA).
+- **Web summary** (`index.html`) - a trimmed, published subset of the results (most recent inspection per LA), with colour-coded judgement grades and headline counts. Layout/styling lives in `web_template.html`; the script fills in the data.
 - **Full spreadsheet** (`ofsted_csc_ilacs_overview.xlsx`) - the complete summary dataset, also downloadable from the web summary.
 - **Inspection history** (`ofsted_csc_ilacs_history.csv`) - every captured inspection, one row per (LA, report), reaching back as far as Ofsted publishes on each LA's page (~2015 for some). Downloadable from the web summary. This file doubles as the incremental-scrape cache: a report listed here with the current `PARSER_VERSION` is never re-downloaded or re-parsed (set `force_refresh = True` in the script's config block, or bump `PARSER_VERSION` after changing parsing logic, to override that).
 - **Downloaded inspection PDFs** (`export_data/inspection_reports/<urn>_<la_name>/`) - packaged per LA, all captured vintages. Not currently published to the web page; download the full repo/`export_data` folder to access these alongside the spreadsheet's active hyperlinks to them.

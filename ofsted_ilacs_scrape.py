@@ -3,6 +3,7 @@
 
 export_summary_filename = 'ofsted_csc_ilacs_overview'
 export_history_filename = 'ofsted_csc_ilacs_history'  # all captured inspections, one row per (urn, report) - also the incremental-scrape cache
+web_template_filename = 'web_template.html'  # page skeleton save_to_html fills in (string.Template $placeholders)
 d2i_contact_email = "datatoinsight.enquiries@gmail.com"
 
 # export_file_type         = 'csv' # Excel / csv currently supported
@@ -77,6 +78,8 @@ import time
 import random
 import logging
 from datetime import datetime, timedelta
+from string import Template
+from zoneinfo import ZoneInfo
 
 # Third party
 import requests
@@ -1370,26 +1373,33 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
     Returns:
         None
     """
-    # Define the page title and introduction text
+    # Define the page title and content fragments substituted into web_template.html
     page_title = "Ofsted ILACS Summary"
 
-    intro_text = f"""
-    Summarised outcomes of published short and standard ILACS inspection reports by Ofsted, refreshed daily.<br/>
-    An expanded version of the shown summary sheet, refreshed concurrently, is available to
-    <a href="{export_summary_filename}.xlsx">download here</a> as an .xlsx file.
-    The full inspection history - every captured past inspection per LA, not just the most
-    recent - is available to <a href="{export_history_filename}.csv">download here</a> as a .csv file.
-    <br/>Data summary is based on the original <i>ILACS Outcomes Summary</i> published periodically by the ADCS:
-    <a href="https://adcs.org.uk/inspection/article/ilacs-outcomes-summary">https://adcs.org.uk/inspection/article/ilacs-outcomes-summary</a>.
-    <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md">Read the tool/project background details and future work.</a>.<br/>
+    intro_html = f"""Summarised outcomes of every English local authority's most recent published
+    short or standard ILACS inspection, scraped daily from published
+    <a href="https://reports.ofsted.gov.uk/">Ofsted inspection reports</a>.
+    Recreates on demand the <i>ILACS Outcomes Summary</i>
+    <a href="https://adcs.org.uk/inspection/article/ilacs-outcomes-summary">published periodically by the ADCS</a> -
+    see the <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md">project README</a>
+    for background and future work."""
+
+    downloads_html = f"""
+    <a class="download-link" href="{export_summary_filename}.xlsx">&#11015;&#65039; Download the full summary (.xlsx)</a>
+    <a class="download-link" href="{export_history_filename}.csv">&#11015;&#65039; Download the full inspection history (.csv)</a>
     """
 
-    disclaimer_text = f"""
-    Disclaimer: This summary is built from scraped data direct from https://reports.ofsted.gov.uk/ published PDF inspection report files.
-    As a result of the nuances|variance within the inspection report content or PDF encoding, we're noting some problematic data extraction for a small number of LAs. Including: southend-on-sea, [overall, help_and_protection_grade,care_leavers_grade], nottingham,[inspection_framework, inspection_date],
-    redcar and cleveland,[inspection_framework, inspection_date], knowsley,[inspector_name], stoke-on-trent,[inspector_name]<br/>
-    From around April 2026, Ofsted stopped publishing an overall effectiveness judgement in ILACS reports - LAs inspected since then will show "not reported post reform" for that column rather than a grade; this reflects a genuine change in what Ofsted report, not a scrape error.<br/>
-    <a href="mailto:{d2i_contact_email}?subject=Ofsted-Scrape-Tool">Feedback</a> on specific problems|inaccuracies|suggestions welcomed.*
+    disclaimer_html = f"""
+    <p><strong>Data quality:</strong> this summary is built by scraping data directly out of the published PDF
+    inspection report files on <a href="https://reports.ofsted.gov.uk/">reports.ofsted.gov.uk</a>. Because of
+    variance in report content and PDF encoding, extraction is known to be problematic for a small number of LAs:
+    Southend-on-Sea (overall, help &amp; protection, care leavers grades), Nottingham (framework, dates),
+    Redcar and Cleveland (framework, dates), Knowsley (inspector name), Stoke-on-Trent (inspector name).</p>
+    <p><strong>2026 framework change:</strong> from around April 2026 Ofsted stopped publishing an overall
+    effectiveness judgement in ILACS reports. LAs inspected since then show "Not reported (2026 framework)"
+    for that column rather than a grade - a genuine change in what Ofsted report, not a scrape error.</p>
+    <p><a href="mailto:{d2i_contact_email}?subject=Ofsted-Scrape-Tool">Feedback</a> on specific
+    problems, inaccuracies or suggestions is welcomed.</p>
     """
     # .copy() avoids a SettingWithCopyWarning below - selecting a subset of columns like
     # this leaves pandas unsure whether `data` is a view onto the original DataFrame or an
@@ -1410,6 +1420,46 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
             data = data.drop(columns=col)
 
 
+    # Headline stats strip - counted from the raw overall grades BEFORE they're turned
+    # into styled badges below. Order here is the display order of the tiles.
+    overall = data['overall_effectiveness_grade'].astype(str).str.strip().str.lower()
+    stat_tiles = [
+        ('total', 'Local authorities covered', len(data)),
+        ('outstanding', 'Outstanding', int((overall == 'outstanding').sum())),
+        ('good', 'Good', int((overall == 'good').sum())),
+        ('requires-improvement', 'Requires improvement', int((overall == 'requires improvement').sum())),
+        ('inadequate', 'Inadequate', int((overall == 'inadequate').sum())),
+        ('not-reported', 'Not reported (post-2026 framework)', int((overall == 'not_reported_post_reform').sum())),
+    ]
+    stats_tiles_html = "\n".join(
+        f'            <li class="stat {css}"><span class="num">{count}</span><span class="label">{label}</span></li>'
+        for css, label, count in stat_tiles
+    )
+
+    # Turn grade values into colour-coded badges. Anything unrecognised passes through
+    # as raw text rather than being hidden. NOTE: the display labels for the no-data and
+    # post-reform states are checked by admin/validate_scrape_output.py (it reads the
+    # rendered cell text) - keep them in sync with that script's grade-value constants.
+    grade_columns = [
+        'overall_effectiveness_grade', 'impact_of_leaders_grade',
+        'help_and_protection_grade', 'in_care_grade', 'care_leavers_grade',
+    ]
+
+    def format_grade_badge(value):
+        text = '' if pd.isna(value) else str(value).strip().lower()
+        if text in ('', 'nan', 'none', 'data_unreadable'):
+            return '<span class="grade grade-no-data">No data</span>'
+        if text == 'not_reported_post_reform':
+            return '<span class="grade grade-not-reported">Not reported (2026 framework)</span>'
+        if text in ('outstanding', 'good', 'requires improvement', 'inadequate'):
+            return f'<span class="grade grade-{text.replace(" ", "-")}">{text.capitalize()}</span>'
+        return str(value)
+
+    for col in grade_columns:
+        if col in data.columns:
+            data[col] = data[col].apply(format_grade_badge)
+
+
     # # If a local link column is specified, convert that column's values to HTML hyperlinks
     # # Displaying only the filename as the hyperlink text
     # if local_link_column:
@@ -1423,7 +1473,9 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
 
     # Convert column names to title/upper case
     data.columns = [c.replace('_', ' ').title() for c in data.columns]
-    data.rename(columns={'Ltla23Cd': 'LTLA23CD', 'Urn': 'URN'}, inplace=True)
+    # Friendlier casing/labels for code-style headers ('La Code New' is the la_code_new
+    # ONS/GSS code column - see CLAUDE.md "Key data conventions")
+    data.rename(columns={'Urn': 'URN', 'La Code': 'LA Code', 'La Code New': 'ONS Code'}, inplace=True)
 
 
     # Generate 'Most-recent-reports' list (last updated list)
@@ -1455,7 +1507,7 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
         las_with_new_inspection_list = [os.path.relpath(file, inspection_reports_folder) for file in all_changed_files]
 
         # Remove "/children's services inspection" and ".pdf" from each list item string
-        # overwrite with cleaned list items. 
+        # overwrite with cleaned list items.
         las_with_new_inspection_list = [re.sub(r"/children's services inspection|\.pdf$", "", file) for file in las_with_new_inspection_list]
 
         # # Verification output only
@@ -1469,55 +1521,46 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
         raise
 
 # end of most-recent-reports generate
-# Note: IF running this script locally, not in Git|Codespaces - Need to chk + remove any onward use of var: las_with_new_inspection_list 
+# Note: IF running this script locally, not in Git|Codespaces - Need to chk + remove any onward use of var: las_with_new_inspection_list
 
-    
 
-    # current time, add one hour to the current time to correct non-UK Git server time
-    adjusted_timestamp_str = (datetime.now() + timedelta(hours=1)).strftime("%d %m %Y %H:%M")
+    # Render the changed-reports list as a readable sentence rather than a raw Python
+    # list repr - items arrive shaped like "80426_barnsley - 30 july 2024" (urn prefix,
+    # optional " - <report date>" suffix); show just the deduplicated, title-cased LA
+    # names. The ' - ' split is safe for hyphenated LA names (e.g. stockton-on-tees):
+    # the suffix separator is a spaced hyphen, name hyphens aren't.
+    cleaned_la_names = sorted({
+        item.split('_', 1)[-1].split('/')[0].split(' - ')[0].replace('_', ' ').strip().title()
+        for item in las_with_new_inspection_list if item
+    })
+    if cleaned_la_names:
+        updated_list_html = ("<strong>New or updated inspection reports this refresh:</strong> "
+                             + ", ".join(cleaned_la_names))
+    else:
+        updated_list_html = "No new or updated inspection reports in this refresh."
 
-    # init HTML content with title and CSS
-    html_content = f"""
-    <html>
-    <head>
-        <title>{page_title}</title>
-        <style>
-            .container {{
-                display: flex;
-                justify-content: center;
-                align-items: center;
-            }}
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 10pt;
-            }}
-            table, th, td {{
-                border: 1px solid #ddd;
-            }}
-            th, td {{
-                padding: 5px;
-                text-align: left;
-            }}
-        </style>
-    </head>
-    <body>
-        <h1>{page_title}</h1>
-        <p>{intro_text}</p>
-        <p>{disclaimer_text}</p>
-        <p><b>Summary data last updated: {adjusted_timestamp_str}</b></p>
-        <p><b>LA inspections last updated: {las_with_new_inspection_list}</b></p>
-        <div class="container">
-    """
+    # UK-local timestamp (zoneinfo handles GMT/BST correctly, unlike the old fixed
+    # +1h adjustment for the non-UK CI server clock)
+    adjusted_timestamp_str = datetime.now(ZoneInfo("Europe/London")).strftime("%d %B %Y, %H:%M %Z")
 
-    # Convert DataFrame to HTML table
-    html_content += data.to_html(escape=False, index=False)
+    # Fill the page template (web_template.html) - layout/CSS live there, data here.
+    # A missing template should fail loudly rather than silently publishing nothing.
+    with open(web_template_filename, encoding='utf-8') as f:
+        template = Template(f.read())
 
-    # Close div and HTML tags
-    html_content += "\n</div>\n</body>\n</html>"
+    html_content = template.substitute(
+        page_title=page_title,
+        intro_html=intro_html,
+        downloads_html=downloads_html,
+        stats_tiles_html=stats_tiles_html,
+        timestamp=adjusted_timestamp_str,
+        updated_list_html=updated_list_html,
+        table_html=data.to_html(escape=False, index=False),
+        disclaimer_html=disclaimer_html,
+    )
 
     # Write to index.html
-    with open("index.html", "w") as f:
+    with open("index.html", "w", encoding='utf-8') as f:
         f.write(html_content)
 
     print("ILACS summary page as index.html successfully created.")

@@ -46,7 +46,7 @@ Everything lives in **`ofsted_ilacs_scrape.py`**, a single ~1600-line top-to-bot
 
 8. **Export** (`save_data_update`, `save_to_html`, `save_inspection_history`) — writes:
    - `ofsted_csc_ilacs_overview.xlsx` at repo root (full summary dataset, via `xlsxwriter`, with the `local_link_to_all_inspections` column as an active hyperlink to that LA's downloaded PDFs).
-   - `index.html` at repo root (a reduced `column_order` subset for the public GitHub Pages site — see the `column_order` list near the end of the script if adding/removing web-visible fields).
+   - `index.html` at repo root (a reduced `column_order` subset for the public GitHub Pages site — see the `column_order` list near the end of the script if adding/removing web-visible fields). Built by filling **`web_template.html`** (repo root) via `string.Template` — page layout/CSS live in the template (GOV.UK-*inspired* styling, deliberately no crown/GOV.UK branding, fully self-contained with no external requests); the dynamic fragments (grade badges, headline stat tiles, intro/disclaimer text, timestamps) are built in `save_to_html`. The grade-badge display labels ("No data", "Not reported (2026 framework)") are read back as cell text by `admin/validate_scrape_output.py` — keep `format_grade_badge` and that script's grade-value constants in sync.
    - `ofsted_csc_ilacs_history.csv` at repo root — every captured inspection, one row per `(urn, inspection_link)`, sorted urn + publication date desc. Written *before* the summary assembly (right after the pagination loop), and doubles as the incremental-scrape cache read by `load_inspection_history()` at the start of the next run. Raw scrape fields only — deliberately not enriched with lookup-CSV columns, so cache validity is independent of `Provider_data_lookup.csv` edits. Rows in the store but not seen on the site this run (delisted reports, or an LA page that failed mid-run) are carried forward, never dropped — the history only grows. **If you change PDF-parsing logic (`extract_inspection_data_update` or the `fix_*_judgement_table` helpers), bump `PARSER_VERSION` in the config block** — otherwise cached rows silently keep pre-fix values forever.
 
 ## Output data — what's actually in the table
@@ -79,7 +79,7 @@ Sentiment/topic columns (`sentiment_score`, `sentiment_summary`, `main_inspectio
 - **ADCS ILACS Outcomes Summary** (the periodic publication this project re-creates on-demand) — `https://adcs.org.uk/inspection/article/ilacs-outcomes-summary`.
 - **Published output (GitHub Pages)** — https://jt-39.github.io/ofsted-ilacs-scrape-tool/.
 
-These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_text` (`ofsted_ilacs_scrape.py:1241-1256`) and in the config block (`ofsted_ilacs_scrape.py:32`) — update both places if a source URL changes.
+These appear as literal strings in `save_to_html`'s `intro_html`/`disclaimer_html` fragments and in the config block (`search_url`, `ofsted_ilacs_scrape.py:52`) — update both places if a source URL changes.
 
 ### Key data conventions
 - **`urn`** (Ofsted's unique provider reference) is the primary join key throughout — always coerced to `int64`/numeric before merges.
@@ -89,6 +89,7 @@ These appear as literal strings in `save_to_html`'s `intro_text`/`disclaimer_tex
 - Per-LA PDF export directories are named `<urn>_<cleaned_la_name>` under `export_data/inspection_reports/`.
 
 ### Supporting files (not part of the main pipeline)
+- **`web_template.html`** — the published page's layout/CSS skeleton, filled in by `save_to_html` (see step 8 above). Edit this for design changes; edit `save_to_html` for data/fragment changes.
 - **`admin/validate_scrape_output.py`** — the CI sanity check described under "CI / deployment" below; also runnable manually.
 - **`admin/check_la_code_currency.py`** — manual, non-CI check for `Provider_data_lookup.csv`'s `la_code_new` codes going stale against the live ONS Open Geography Portal "Local Authority Districts ... Names and Codes in England" dataset. Not wired into either GitHub Actions workflow — LA boundary changes are rare, government-order-driven events, not worth checking on every daily/PR run. Run manually with `uv run python admin/check_la_code_currency.py`.
 - **`admin/sentiment_experiment.py`** — unused reference code for sentiment/topic analysis on inspection PDFs (see step 7 above); not imported by anything.

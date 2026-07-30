@@ -63,15 +63,18 @@ REQUIRED_HEADERS = [
 # extraction breakage.
 FAILURE_RATE_THRESHOLD = 0.10
 
-# How a "failed extraction" grade cell renders in index.html: pandas' to_html()
-# renders missing values as the literal string "NaN", and the crash-safety
-# fallback in extract_inspection_data_update fills in "data_unreadable".
-FAILED_GRADE_VALUES = {"", "nan", "data_unreadable", "none"}
+# How a "failed extraction" grade cell renders in index.html. save_to_html turns raw
+# missing/unreadable values into a styled "No data" badge (this parser reads the badge's
+# inner text); the raw values are kept in the set too so this script can still validate
+# a page generated before the badge styling existed.
+FAILED_GRADE_VALUES = {"", "no data", "nan", "data_unreadable", "none"}
 
 # Ofsted stopped reporting this judgement from ~April 2026 - see
 # fix_misalligned_judgement_table in ofsted_ilacs_scrape.py. Expected and
 # permanent for affected LAs, not a failure - tracked separately below.
-POST_REFORM_GRADE_VALUE = "not_reported_post_reform"
+# Both the styled badge label and the raw sentinel are accepted (as above).
+# NOTE: keep in sync with format_grade_badge in ofsted_ilacs_scrape.py's save_to_html.
+POST_REFORM_GRADE_VALUES = {"not_reported_post_reform", "not reported (2026 framework)"}
 
 
 class _TableParser(HTMLParser):
@@ -159,7 +162,7 @@ def check_html():
         for row in parser.rows:
             la = row[la_idx] if la_idx < len(row) else "<unknown>"
             value = row[grade_idx].strip().lower() if grade_idx < len(row) else ""
-            if value == POST_REFORM_GRADE_VALUE:
+            if value in POST_REFORM_GRADE_VALUES:
                 post_reform_las.append(la)
             elif value in FAILED_GRADE_VALUES:
                 failed_las.append(la)
