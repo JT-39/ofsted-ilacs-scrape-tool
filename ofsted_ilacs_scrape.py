@@ -2,10 +2,27 @@
 # Export options
 
 export_summary_filename = 'ofsted_csc_ilacs_overview'
+export_history_filename = 'ofsted_csc_ilacs_history'  # all captured inspections, one row per (urn, report) - also the incremental-scrape cache
+web_template_filename = 'web_template.html'  # page skeleton save_to_html fills in (string.Template $placeholders)
 d2i_contact_email = "datatoinsight.enquiries@gmail.com"
 
 # export_file_type         = 'csv' # Excel / csv currently supported
 export_file_type         = 'excel'
+
+#
+# Inspection history / incremental re-scrape settings
+
+# Version stamp written onto every row of the history CSV when it's parsed. Cached rows
+# with an older stamp are re-parsed on the next run instead of being reused - so BUMP THIS
+# whenever the PDF-parsing logic changes (extract_inspection_data_update or the
+# fix_*_judgement_table helpers), otherwise previously-cached rows silently keep values
+# produced by the old (pre-fix) parser forever.
+PARSER_VERSION = 1
+
+# Manual override: re-download/re-parse every report regardless of what's cached in the
+# history CSV. Normal runs leave this False - cached reports are reused without touching
+# the PDF at all, so only LAs with a genuinely new inspection cost any parsing time.
+force_refresh = False
 
 # Default (sub)folder structure
 # Defined to offer some ease of onward flexibility
@@ -61,6 +78,8 @@ import time
 import random
 import logging
 from datetime import datetime, timedelta
+from string import Template
+from zoneinfo import ZoneInfo
 
 # Third party
 import requests
@@ -801,18 +820,130 @@ def extract_inspection_data_update(pdf_content, urn=None, la_name=None, pdf_file
 
 
 
-def process_provider_links(provider_links):
+# Inspection history store
+#
+# ofsted_csc_ilacs_history.csv is both outputs: the full historic dataset (one row per
+# captured inspection report, all vintages) AND the incremental-scrape cache - a report
+# whose (urn, inspection_link) is already stored with the current PARSER_VERSION is
+# reused as-is, with no PDF download or parse. inspection_link (files.ofsted.gov.uk/
+# v1/file/<id>) is unique per published file, so a re-published/amended report gets a
+# new id and naturally re-parses as a new row.
+#
+# Kept as plain functions to match the script's current style; if/when the script is
+# modularised this store is a natural candidate to become its own module/class.
+
+# History-CSV columns where a blank cell should come back as missing (None) rather than
+# an empty string when a stored row is reused. CSV storage can't distinguish None/NaN
+# from '' - but a fresh parse produces None/NaN for these (and '' for the date columns),
+# so reused rows must follow the same convention or the summary output would subtly
+# differ between cached and freshly-parsed LAs.
+history_blank_means_missing = [
+    'inspector_name', 'inspection_framework',
+    'overall_effectiveness_grade', 'impact_of_leaders_grade',
+    'help_and_protection_grade', 'in_care_grade', 'care_leavers_grade',
+]
+
+
+def load_inspection_history():
     """
-    Processes provider links and returns a list of dictionaries containing URN, local authority, and inspection link.
+    Loads the inspection history CSV into a lookup dict keyed on (urn, inspection_link).
+
+    Returns:
+        dict: {(urn, inspection_link): row_dict} of previously captured reports, with all
+        values as strings exactly as stored ('' for blanks). Empty dict if the history
+        file doesn't exist yet (first run) or can't be read (falls back to a full
+        re-scrape rather than crashing - the store is a cache, not a dependency).
+    """
+    history_path = export_history_filename + '.csv'
+    if not os.path.exists(history_path):
+        return {}
+    try:
+        # dtype=str + keep_default_na=False -> every cell round-trips as the exact string
+        # written (blanks as ''), no pandas NaN/type coercion between runs.
+        history_df = pd.read_csv(history_path, dtype=str, keep_default_na=False)
+        return {
+            (row['urn'], row['inspection_link']): row
+            for row in history_df.to_dict(orient='records')
+        }
+    except Exception as e:
+        logging.warning(f"Could not read inspection history '{history_path}' ({e}) - re-scraping everything this run.")
+        return {}
+
+
+def history_row_is_reusable(stored_row):
+    """
+    A stored history row is reusable (skip download + parse) only if it was produced by
+    the current parser version and force_refresh isn't set. Older-version rows are
+    re-parsed so parser fixes actually reach previously-captured reports.
+    """
+    if force_refresh:
+        return False
+    return stored_row.get('parser_version') == str(PARSER_VERSION)
+
+
+def summary_fields_from_history_row(stored_row):
+    """
+    Rebuilds the parse-result fields from a stored history row, restoring the missing-value
+    convention a fresh parse uses (None for blank names/grades/framework, '' for blank
+    dates - see history_blank_means_missing). The caller adds the per-run fields
+    (current LA name, provider dir link) itself, same as the fresh-parse path.
+    """
+    fields = dict(stored_row)
+    for col in history_blank_means_missing:
+        if fields.get(col) == '':
+            fields[col] = None
+    return fields
+
+
+# Canonical history-CSV column order - fresh rows and rows re-loaded from a previous
+# run's CSV both follow this, keeping the file's diffs stable across runs.
+history_columns = [
+    'urn', 'local_authority', 'inspection_link', 'pdf_filename', 'publication_date',
+    'inspection_framework', 'inspector_name', 'inspection_start_date', 'inspection_end_date',
+    'overall_effectiveness_grade', 'impact_of_leaders_grade', 'help_and_protection_grade',
+    'in_care_grade', 'care_leavers_grade', 'parser_version',
+]
+
+
+def save_inspection_history(history_rows):
+    """
+    Writes the full inspection history (list of row dicts) back to the history CSV,
+    sorted by urn then publication date (most recent first) for stable, reviewable diffs.
+    """
+    history_df = pd.DataFrame(history_rows).reindex(columns=history_columns)
+    history_df = history_df.drop_duplicates(subset=['urn', 'inspection_link'], keep='first')
+    # publication_date is stored dd/mm/yy - parse just for sorting, don't alter the column
+    sort_key = pd.to_datetime(history_df['publication_date'], format='%d/%m/%y', errors='coerce')
+    history_df = (
+        history_df.assign(_sort_key=sort_key)
+        .sort_values(['urn', '_sort_key'], ascending=[True, False])
+        .drop(columns=['_sort_key'])
+    )
+    save_data_update(history_df, export_history_filename, file_type='csv')
+
+
+def process_provider_links(provider_links, history_store):
+    """
+    Processes provider links, capturing EVERY matching inspection report per LA (not just
+    the most recent), reusing previously-parsed reports from the history store where possible.
 
     Args:
         provider_links (list): A list of BeautifulSoup Tag objects representing provider links.
+        history_store (dict): {(urn, inspection_link): row_dict} from load_inspection_history() -
+            reports already captured with the current PARSER_VERSION are reused without
+            downloading or parsing the PDF again.
 
     Returns:
-        list: A list of dictionaries containing URN, local authority, inspection link, and inspection judgement data.
+        tuple: (data, history_rows)
+            data (list): one dict per LA describing its MOST RECENT inspection - the same
+                fields as before this function captured history (the summary pipeline
+                downstream is unchanged).
+            history_rows (list): one dict per (LA, inspection report) seen on the site this
+                run - reused rows carried through unchanged, new/stale ones freshly parsed.
     """
 
     data = []
+    history_rows = []
     global root_export_folder
     global inspections_subfolder
 
@@ -840,11 +971,12 @@ def process_provider_links(provider_links):
         # Find all publication links in the provider's child page
         pdf_links = child_soup.find_all('a', {'class': 'publication-link'})
 
-        # Initialise a flag to indicate if an inspection link has been found
+        # Flag tracking whether we've captured the LA's most recent inspection yet.
         # Important: This assumes that the provider's reports are returned/organised most recent FIRST
         found_inspection_link = False
 
-        # Iterate through the publication links
+        # Iterate through the publication links - EVERY matching report is captured into
+        # the history rows; only the first (most recent) additionally feeds the summary.
         for pdf_link in pdf_links:
 
             # Check if the current/next href-link meets the selection criteria
@@ -853,52 +985,64 @@ def process_provider_links(provider_links):
 
             nonvisual_text = pdf_link.select_one('span.nonvisual').text.lower().strip()
 
-            # For now at least, web page search terms hard-coded. 
+            # For now at least, web page search terms hard-coded.
             if 'children' in nonvisual_text and 'services' in nonvisual_text and 'inspection' in nonvisual_text:
 
-                # Create the filename and download the PDF (this filetype needs to be hard-coded here)
+                # Create the filename (this filetype needs to be hard-coded here)
                 filename = nonvisual_text.replace(', pdf', '') + '.pdf'
+                inspection_link = pdf_link['href']
 
+                stored_row = history_store.get((urn, inspection_link))
+                reused = stored_row is not None and history_row_is_reusable(stored_row)
 
-                # # Turn this OFF to minimise data
-                # # Download and stores locally each relevant PDF!
-                pdf_content = get_pdf_content(pdf_link['href'])
-                if pdf_content is None:
-                    # Download failed even after retries (e.g. a mid-request connection
-                    # reset) - skip this publication link rather than crashing the whole
-                    # run. If this was the most recent report, the next iteration will
-                    # try the LA's next-most-recent one instead.
-                    logging.error(f"Failed to download PDF for '{la_name_str}' (urn {urn}): {pdf_link['href']}")
-                    continue
-                # with open(os.path.join(provider_dir, filename), 'wb') as f:
-                #     f.write(pdf_content)
-                # ## END data reduction
+                if reused:
+                    # Already captured with the current parser version - reuse it as-is.
+                    # No PDF download, no parse: this is what makes repeat runs fast for
+                    # LAs with no new inspection.
+                    history_rows.append(dict(stored_row))
+                    parse_fields = summary_fields_from_history_row(stored_row)
+                else:
+                    # New report (or cached under an older PARSER_VERSION / force_refresh):
+                    # get the PDF bytes - from the local archive if we already hold the file
+                    # (the repo carries the historic PDFs), else download and archive it.
+                    pdf_path = os.path.join(provider_dir, filename)
+                    if os.path.exists(pdf_path):
+                        with open(pdf_path, 'rb') as f:
+                            pdf_content = f.read()
+                    else:
+                        pdf_content = get_pdf_content(inspection_link)
+                        if pdf_content is None:
+                            # Download failed even after retries (e.g. a mid-request connection
+                            # reset) - skip this publication link rather than crashing the whole
+                            # run. If this was the most recent report, the next iteration will
+                            # try the LA's next-most-recent one instead; if the report was
+                            # captured on an earlier run it's carried forward from the store.
+                            logging.error(f"Failed to download PDF for '{la_name_str}' (urn {urn}): {inspection_link}")
+                            continue
+                        with open(pdf_path, 'wb') as f:
+                            f.write(pdf_content)
 
-
-
-               # Extract the local authority and inspection link, and add the data to the list
-                if not found_inspection_link:
-
-                    # Capture the data that will be exported about the most recent inspection only
-                    local_authority = provider_dir.split('_', 1)[-1].replace('_', ' ').strip()
-                    inspection_link = pdf_link['href']
-                    
-                    # Extract the report published date
-                    report_published_date_str = filename.split('-')[-1].strip().split('.')[0] # published date appears after '-' 
-            
-                    # get/format date(s) (as dt objects)
-                    report_published_date = format_date(report_published_date_str, '%d %B %Y', '%d/%m/%y')
+                    # Extract the report published date from the filename (appears after '-').
+                    # Tolerate unexpected filename formats on old reports rather than crashing.
+                    report_published_date_str = filename.split('-')[-1].strip().split('.')[0]
+                    try:
+                        report_published_date = format_date(report_published_date_str, '%d %B %Y', '%d/%m/%y')
+                    except ValueError:
+                        logging.warning(f"Could not parse publication date from filename '{filename}' ('{la_name_str}', urn {urn})")
+                        report_published_date = ''
 
                     # Now get the in-document data
                     # Scrape inside the pdf inspection reports
-                    # inspection_data_dict = extract_inspection_data(pdf_content)
                     try:
                         inspection_data_dict = extract_inspection_data_update(
                             pdf_content, urn=urn, la_name=la_name_str, pdf_filename=filename
                         )
                     except Exception as e:
                         # One LA's oddly-formatted PDF shouldn't take down the whole scrape run -
-                        # log it and carry on with placeholder values for this LA only.
+                        # log it and carry on with placeholder values for this report only.
+                        # NOTE: the placeholder row is still cached with the current PARSER_VERSION,
+                        # so the same broken PDF isn't pointlessly re-parsed every day - bump
+                        # PARSER_VERSION (or set force_refresh) after a parser fix to retry these.
                         logging.error(f"Failed to extract inspection data for '{la_name_str}' (urn {urn}, file '{filename}'): {e}")
                         inspection_data_dict = {
                             'inspector_name': None,
@@ -913,61 +1057,55 @@ def process_provider_links(provider_links):
                             'table_rows_found': 0,
                         }
 
-                    # Dict extract here for readability of returned data/onward
+                    # The per-report fields shared by the history CSV and (for the most
+                    # recent report) the summary row. Dates formatted for output here,
+                    # matching the pre-history behaviour of the summary path.
+                    parse_fields = {
+                        'urn': urn,
+                        'local_authority': la_name_str,
+                        'inspection_link': inspection_link,
+                        'overall_effectiveness_grade': inspection_data_dict['overall_inspection_grade'],
+                        'inspection_framework': inspection_data_dict['inspection_framework'],
+                        'inspector_name': inspection_data_dict['inspector_name'],
+                        'inspection_start_date': format_date_for_report(inspection_data_dict['inspection_start_date'], "%d/%m/%Y"),
+                        'inspection_end_date': format_date_for_report(inspection_data_dict['inspection_end_date'], "%d/%m/%Y"),
+                        'publication_date': report_published_date,
+                        'impact_of_leaders_grade': inspection_data_dict['impact_of_leaders_grade'],
+                        'help_and_protection_grade': inspection_data_dict['help_and_protection_grade'],
+                        # in_care_grade holds the combined care_and_care_leavers_grade for pre Jan 2023 inspections
+                        'in_care_grade': inspection_data_dict['in_care_grade'],
+                        'care_leavers_grade': inspection_data_dict['care_leavers_grade'],
+                    }
+                    history_rows.append({**parse_fields, 'pdf_filename': filename, 'parser_version': str(PARSER_VERSION)})
 
-                    # inspection basics
-                    overall_effectiveness = inspection_data_dict['overall_inspection_grade']
-                    inspector_name = inspection_data_dict['inspector_name']
-                    inspection_start_date = inspection_data_dict['inspection_start_date']
-                    inspection_end_date = inspection_data_dict['inspection_end_date']
-                    inspection_framework = inspection_data_dict['inspection_framework']
-                    # additional inspection grades if available
-                    impact_of_leaders_grade = inspection_data_dict['impact_of_leaders_grade']
-                    help_and_protection_grade = inspection_data_dict['help_and_protection_grade']
-                    # care_and_care_leavers_grade = inspection_data_dict['care_and_care_leavers_grade']
-                    # # updates to reflect post jan 2023 summary changes
-                    in_care_grade = inspection_data_dict['in_care_grade']
-                    care_leavers_grade = inspection_data_dict['care_leavers_grade']
+                # The first matching report is the LA's most recent inspection - it feeds
+                # the summary outputs (xlsx/index.html), exactly as before history capture.
+                if not found_inspection_link:
 
-                    # # NLP extract #sentiment
-                    # sentiment_score = inspection_data_dict['sentiment_score']
-                    # sentiment_summary = inspection_data_dict['sentiment_summary']
-                    # main_inspection_topics = inspection_data_dict['main_inspection_topics']
-
-
-
-                    # format dates for output
-                    inspection_start_date_formatted = format_date_for_report(inspection_start_date, "%d/%m/%Y")
-                    inspection_end_date_formatted = format_date_for_report(inspection_end_date, "%d/%m/%Y")
+                    local_authority = provider_dir.split('_', 1)[-1].replace('_', ' ').strip()
 
                     # Format the provider directory as a file path link (in readiness for such as Excel)
                     provider_dir_link = f"{provider_dir}"
-
-
                     provider_dir_link = provider_dir_link.replace('/', '\\') # fix for Windows systems
 
-                    # # TESTING  #DEBUG #sentiment
-                    # print(f"{la_name_str}, {overall_effectiveness},{impact_of_leaders_grade}, {help_and_protection_grade}, {in_care_grade}, {care_leavers_grade}, {inspection_start_date_formatted}")
-
-                    print(f"{local_authority}") # Gives listing console output during run in the format 'data/inspection reports/urn name_of_la'
+                    print(f"{local_authority}{' (cached)' if reused else ''}") # Gives listing console output during run in the format 'data/inspection reports/urn name_of_la'
 
                     data.append({
                                     'urn': urn,
                                     'local_authority': la_name_str,
                                     'inspection_link': inspection_link,
-                                    'overall_effectiveness_grade': overall_effectiveness,
-                                    'inspection_framework': inspection_framework,
-                                    'inspector_name': inspector_name,
-                                    'inspection_start_date': inspection_start_date_formatted,
-                                    'inspection_end_date': inspection_end_date_formatted,
-                                    'publication_date': report_published_date,
+                                    'overall_effectiveness_grade': parse_fields['overall_effectiveness_grade'],
+                                    'inspection_framework': parse_fields['inspection_framework'],
+                                    'inspector_name': parse_fields['inspector_name'],
+                                    'inspection_start_date': parse_fields['inspection_start_date'],
+                                    'inspection_end_date': parse_fields['inspection_end_date'],
+                                    'publication_date': parse_fields['publication_date'],
                                     'local_link_to_all_inspections': provider_dir_link,
-                                    'impact_of_leaders_grade': impact_of_leaders_grade,
-                                    'help_and_protection_grade': help_and_protection_grade,
+                                    'impact_of_leaders_grade': parse_fields['impact_of_leaders_grade'],
+                                    'help_and_protection_grade': parse_fields['help_and_protection_grade'],
 
-                                    # 'care_and_care_leavers_grade': care_and_care_leavers_grade,
-                                    'in_care_grade': in_care_grade, # This now becomes the care_and_care_leavers_grade if a pre Jan 2023 inspection
-                                    'care_leavers_grade': care_leavers_grade,
+                                    'in_care_grade': parse_fields['in_care_grade'], # This now becomes the care_and_care_leavers_grade if a pre Jan 2023 inspection
+                                    'care_leavers_grade': parse_fields['care_leavers_grade'],
 
                                     # 'sentiment_score': sentiment_score,
                                     # 'sentiment_summary': sentiment_summary,
@@ -975,8 +1113,8 @@ def process_provider_links(provider_links):
 
                                 })
 
-                    found_inspection_link = True # Flag to ensure data reporting on only the most recent inspection
-    return data
+                    found_inspection_link = True # Only the first (most recent) report feeds the summary
+    return data, history_rows
 
 
 def handle_pagination(soup, url_stem):
@@ -1235,24 +1373,33 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
     Returns:
         None
     """
-    # Define the page title and introduction text
+    # Define the page title and content fragments substituted into web_template.html
     page_title = "Ofsted ILACS Summary"
 
-    intro_text = f"""
-    Summarised outcomes of published short and standard ILACS inspection reports by Ofsted, refreshed daily.<br/>
-    An expanded version of the shown summary sheet, refreshed concurrently, is available to
-    <a href="{export_summary_filename}.xlsx">download here</a> as an .xlsx file.
-    <br/>Data summary is based on the original <i>ILACS Outcomes Summary</i> published periodically by the ADCS:
-    <a href="https://adcs.org.uk/inspection/article/ilacs-outcomes-summary">https://adcs.org.uk/inspection/article/ilacs-outcomes-summary</a>.
-    <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md">Read the tool/project background details and future work.</a>.<br/>
+    intro_html = f"""Summarised outcomes of every English local authority's most recent published
+    short or standard ILACS inspection, scraped daily from published
+    <a href="https://reports.ofsted.gov.uk/">Ofsted inspection reports</a>.
+    Recreates on demand the <i>ILACS Outcomes Summary</i>
+    <a href="https://adcs.org.uk/inspection/article/ilacs-outcomes-summary">published periodically by the ADCS</a> -
+    see the <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md">project README</a>
+    for background and future work."""
+
+    downloads_html = f"""
+    <a class="download-link" href="{export_summary_filename}.xlsx">&#11015;&#65039; Download the full summary (.xlsx)</a>
+    <a class="download-link" href="{export_history_filename}.csv">&#11015;&#65039; Download the full inspection history (.csv)</a>
     """
 
-    disclaimer_text = f"""
-    Disclaimer: This summary is built from scraped data direct from https://reports.ofsted.gov.uk/ published PDF inspection report files.
-    As a result of the nuances|variance within the inspection report content or PDF encoding, we're noting some problematic data extraction for a small number of LAs. Including: southend-on-sea, [overall, help_and_protection_grade,care_leavers_grade], nottingham,[inspection_framework, inspection_date],
-    redcar and cleveland,[inspection_framework, inspection_date], knowsley,[inspector_name], stoke-on-trent,[inspector_name]<br/>
-    From around April 2026, Ofsted stopped publishing an overall effectiveness judgement in ILACS reports - LAs inspected since then will show "not reported post reform" for that column rather than a grade; this reflects a genuine change in what Ofsted report, not a scrape error.<br/>
-    <a href="mailto:{d2i_contact_email}?subject=Ofsted-Scrape-Tool">Feedback</a> on specific problems|inaccuracies|suggestions welcomed.*
+    disclaimer_html = f"""
+    <p><strong>Data quality:</strong> this summary is built by scraping data directly out of the published PDF
+    inspection report files on <a href="https://reports.ofsted.gov.uk/">reports.ofsted.gov.uk</a>. Because of
+    variance in report content and PDF encoding, extraction is known to be problematic for a small number of LAs:
+    Southend-on-Sea (overall, help &amp; protection, care leavers grades), Nottingham (framework, dates),
+    Redcar and Cleveland (framework, dates), Knowsley (inspector name), Stoke-on-Trent (inspector name).</p>
+    <p><strong>2026 framework change:</strong> from around April 2026 Ofsted stopped publishing an overall
+    effectiveness judgement in ILACS reports. LAs inspected since then show "Not reported (2026 framework)"
+    for that column rather than a grade - a genuine change in what Ofsted report, not a scrape error.</p>
+    <p><a href="mailto:{d2i_contact_email}?subject=Ofsted-Scrape-Tool">Feedback</a> on specific
+    problems, inaccuracies or suggestions is welcomed.</p>
     """
     # .copy() avoids a SettingWithCopyWarning below - selecting a subset of columns like
     # this leaves pandas unsure whether `data` is a view onto the original DataFrame or an
@@ -1273,6 +1420,46 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
             data = data.drop(columns=col)
 
 
+    # Headline stats strip - counted from the raw overall grades BEFORE they're turned
+    # into styled badges below. Order here is the display order of the tiles.
+    overall = data['overall_effectiveness_grade'].astype(str).str.strip().str.lower()
+    stat_tiles = [
+        ('total', 'Local authorities covered', len(data)),
+        ('outstanding', 'Outstanding', int((overall == 'outstanding').sum())),
+        ('good', 'Good', int((overall == 'good').sum())),
+        ('requires-improvement', 'Requires improvement', int((overall == 'requires improvement').sum())),
+        ('inadequate', 'Inadequate', int((overall == 'inadequate').sum())),
+        ('not-reported', 'Not reported (post-2026 framework)', int((overall == 'not_reported_post_reform').sum())),
+    ]
+    stats_tiles_html = "\n".join(
+        f'            <li class="stat {css}"><span class="num">{count}</span><span class="label">{label}</span></li>'
+        for css, label, count in stat_tiles
+    )
+
+    # Turn grade values into colour-coded badges. Anything unrecognised passes through
+    # as raw text rather than being hidden. NOTE: the display labels for the no-data and
+    # post-reform states are checked by admin/validate_scrape_output.py (it reads the
+    # rendered cell text) - keep them in sync with that script's grade-value constants.
+    grade_columns = [
+        'overall_effectiveness_grade', 'impact_of_leaders_grade',
+        'help_and_protection_grade', 'in_care_grade', 'care_leavers_grade',
+    ]
+
+    def format_grade_badge(value):
+        text = '' if pd.isna(value) else str(value).strip().lower()
+        if text in ('', 'nan', 'none', 'data_unreadable'):
+            return '<span class="grade grade-no-data">No data</span>'
+        if text == 'not_reported_post_reform':
+            return '<span class="grade grade-not-reported">Not reported (2026 framework)</span>'
+        if text in ('outstanding', 'good', 'requires improvement', 'inadequate'):
+            return f'<span class="grade grade-{text.replace(" ", "-")}">{text.capitalize()}</span>'
+        return str(value)
+
+    for col in grade_columns:
+        if col in data.columns:
+            data[col] = data[col].apply(format_grade_badge)
+
+
     # # If a local link column is specified, convert that column's values to HTML hyperlinks
     # # Displaying only the filename as the hyperlink text
     # if local_link_column:
@@ -1286,7 +1473,9 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
 
     # Convert column names to title/upper case
     data.columns = [c.replace('_', ' ').title() for c in data.columns]
-    data.rename(columns={'Ltla23Cd': 'LTLA23CD', 'Urn': 'URN'}, inplace=True)
+    # Friendlier casing/labels for code-style headers ('La Code New' is the la_code_new
+    # ONS/GSS code column - see CLAUDE.md "Key data conventions")
+    data.rename(columns={'Urn': 'URN', 'La Code': 'LA Code', 'La Code New': 'ONS Code'}, inplace=True)
 
 
     # Generate 'Most-recent-reports' list (last updated list)
@@ -1318,7 +1507,7 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
         las_with_new_inspection_list = [os.path.relpath(file, inspection_reports_folder) for file in all_changed_files]
 
         # Remove "/children's services inspection" and ".pdf" from each list item string
-        # overwrite with cleaned list items. 
+        # overwrite with cleaned list items.
         las_with_new_inspection_list = [re.sub(r"/children's services inspection|\.pdf$", "", file) for file in las_with_new_inspection_list]
 
         # # Verification output only
@@ -1332,55 +1521,46 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
         raise
 
 # end of most-recent-reports generate
-# Note: IF running this script locally, not in Git|Codespaces - Need to chk + remove any onward use of var: las_with_new_inspection_list 
+# Note: IF running this script locally, not in Git|Codespaces - Need to chk + remove any onward use of var: las_with_new_inspection_list
 
-    
 
-    # current time, add one hour to the current time to correct non-UK Git server time
-    adjusted_timestamp_str = (datetime.now() + timedelta(hours=1)).strftime("%d %m %Y %H:%M")
+    # Render the changed-reports list as a readable sentence rather than a raw Python
+    # list repr - items arrive shaped like "80426_barnsley - 30 july 2024" (urn prefix,
+    # optional " - <report date>" suffix); show just the deduplicated, title-cased LA
+    # names. The ' - ' split is safe for hyphenated LA names (e.g. stockton-on-tees):
+    # the suffix separator is a spaced hyphen, name hyphens aren't.
+    cleaned_la_names = sorted({
+        item.split('_', 1)[-1].split('/')[0].split(' - ')[0].replace('_', ' ').strip().title()
+        for item in las_with_new_inspection_list if item
+    })
+    if cleaned_la_names:
+        updated_list_html = ("<strong>New or updated inspection reports this refresh:</strong> "
+                             + ", ".join(cleaned_la_names))
+    else:
+        updated_list_html = "No new or updated inspection reports in this refresh."
 
-    # init HTML content with title and CSS
-    html_content = f"""
-    <html>
-    <head>
-        <title>{page_title}</title>
-        <style>
-            .container {{
-                display: flex;
-                justify-content: center;
-                align-items: center;
-            }}
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 10pt;
-            }}
-            table, th, td {{
-                border: 1px solid #ddd;
-            }}
-            th, td {{
-                padding: 5px;
-                text-align: left;
-            }}
-        </style>
-    </head>
-    <body>
-        <h1>{page_title}</h1>
-        <p>{intro_text}</p>
-        <p>{disclaimer_text}</p>
-        <p><b>Summary data last updated: {adjusted_timestamp_str}</b></p>
-        <p><b>LA inspections last updated: {las_with_new_inspection_list}</b></p>
-        <div class="container">
-    """
+    # UK-local timestamp (zoneinfo handles GMT/BST correctly, unlike the old fixed
+    # +1h adjustment for the non-UK CI server clock)
+    adjusted_timestamp_str = datetime.now(ZoneInfo("Europe/London")).strftime("%d %B %Y, %H:%M %Z")
 
-    # Convert DataFrame to HTML table
-    html_content += data.to_html(escape=False, index=False)
+    # Fill the page template (web_template.html) - layout/CSS live there, data here.
+    # A missing template should fail loudly rather than silently publishing nothing.
+    with open(web_template_filename, encoding='utf-8') as f:
+        template = Template(f.read())
 
-    # Close div and HTML tags
-    html_content += "\n</div>\n</body>\n</html>"
+    html_content = template.substitute(
+        page_title=page_title,
+        intro_html=intro_html,
+        downloads_html=downloads_html,
+        stats_tiles_html=stats_tiles_html,
+        timestamp=adjusted_timestamp_str,
+        updated_list_html=updated_list_html,
+        table_html=data.to_html(escape=False, index=False),
+        disclaimer_html=disclaimer_html,
+    )
 
     # Write to index.html
-    with open("index.html", "w") as f:
+    with open("index.html", "w", encoding='utf-8') as f:
         f.write(html_content)
 
     print("ILACS summary page as index.html successfully created.")
@@ -1396,6 +1576,11 @@ def save_to_html(data, column_order, local_link_column=None, web_link_column=Non
 
 
 last_page_was_full = False
+
+# Previously captured inspections - both the historic dataset being extended and the
+# cache that lets LAs with no new inspection skip PDF download/parse entirely.
+inspection_history_store = load_inspection_history()
+all_history_rows = []
 
 while start < max_results:
     # Construct URL for current chunk
@@ -1421,7 +1606,9 @@ while start < max_results:
     last_page_was_full = len(provider_links) == max_page_results
 
     # provider links
-    data.extend(process_provider_links(provider_links))
+    page_data, page_history_rows = process_provider_links(provider_links, inspection_history_store)
+    data.extend(page_data)
+    all_history_rows.extend(page_history_rows)
 
     # continue on next batch (if there is)
     start += max_page_results
@@ -1438,6 +1625,18 @@ else:
             f"cap that were not scraped. Consider raising max_results."
         )
 
+
+# Persist the inspection history (historic dataset + next run's cache).
+# Previously-captured reports not seen on the site this run (e.g. a report Ofsted has
+# since delisted, or an LA page that failed to fetch mid-run) are carried forward rather
+# than dropped - the history only ever grows.
+seen_history_keys = {(row['urn'], row['inspection_link']) for row in all_history_rows}
+for key, stored_row in inspection_history_store.items():
+    if key not in seen_history_keys:
+        all_history_rows.append(dict(stored_row))
+
+save_inspection_history(all_history_rows)
+print(f"📊 DEBUG: Inspection history rows: {len(all_history_rows)}")
 
 
 # Convert the 'data' list to a DataFrame

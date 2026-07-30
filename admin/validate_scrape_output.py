@@ -27,15 +27,26 @@ and never count towards the failure rate - unlike genuine extraction
 failures, this is an expected, permanent, and growing state as more LAs get
 re-inspected under the new framework, not a bug to alert on.
 
+The inspection history CSV (all captured past inspections; also the incremental-scrape
+cache) gets structural checks only - exists, parses, required columns, at least one row
+per summary LA. Historic rows are best-effort parses of old report formats, so their
+data quality is deliberately not judged (see README "Known limitations").
+
 Run manually with: python admin/validate_scrape_output.py
 """
 
+import csv
 import os
 import sys
 from html.parser import HTMLParser
 
 HTML_PATH = "index.html"
 XLSX_PATH = "ofsted_csc_ilacs_overview.xlsx"
+HISTORY_PATH = "ofsted_csc_ilacs_history.csv"
+
+# The history CSV must at minimum identify each report and carry the headline grade -
+# see history_columns in ofsted_ilacs_scrape.py for the full column set.
+HISTORY_REQUIRED_COLUMNS = ["urn", "local_authority", "inspection_link", "overall_effectiveness_grade", "parser_version"]
 
 MIN_ROWS = 100  # expecting ~153 LAs (see max_results in ofsted_ilacs_scrape.py); a
                 # broken scrape produces far fewer
@@ -52,15 +63,18 @@ REQUIRED_HEADERS = [
 # extraction breakage.
 FAILURE_RATE_THRESHOLD = 0.10
 
-# How a "failed extraction" grade cell renders in index.html: pandas' to_html()
-# renders missing values as the literal string "NaN", and the crash-safety
-# fallback in extract_inspection_data_update fills in "data_unreadable".
-FAILED_GRADE_VALUES = {"", "nan", "data_unreadable", "none"}
+# How a "failed extraction" grade cell renders in index.html. save_to_html turns raw
+# missing/unreadable values into a styled "No data" badge (this parser reads the badge's
+# inner text); the raw values are kept in the set too so this script can still validate
+# a page generated before the badge styling existed.
+FAILED_GRADE_VALUES = {"", "no data", "nan", "data_unreadable", "none"}
 
 # Ofsted stopped reporting this judgement from ~April 2026 - see
 # fix_misalligned_judgement_table in ofsted_ilacs_scrape.py. Expected and
 # permanent for affected LAs, not a failure - tracked separately below.
-POST_REFORM_GRADE_VALUE = "not_reported_post_reform"
+# Both the styled badge label and the raw sentinel are accepted (as above).
+# NOTE: keep in sync with format_grade_badge in ofsted_ilacs_scrape.py's save_to_html.
+POST_REFORM_GRADE_VALUES = {"not_reported_post_reform", "not reported (2026 framework)"}
 
 
 class _TableParser(HTMLParser):
@@ -114,16 +128,17 @@ def gh_annotation(level, message):
 
 
 def check_html():
+    """Returns (errors, warnings, info, row_count) - row_count is 0 when the file is unusable."""
     errors = []
     warnings = []
     info = []
 
     if not os.path.exists(HTML_PATH):
-        return [f"{HTML_PATH} was not generated"], [], []
+        return [f"{HTML_PATH} was not generated"], [], [], 0
 
     size = os.path.getsize(HTML_PATH)
     if size < MIN_HTML_BYTES:
-        return [f"{HTML_PATH} is only {size} bytes - looks empty/broken"], [], []
+        return [f"{HTML_PATH} is only {size} bytes - looks empty/broken"], [], [], 0
 
     html = open(HTML_PATH, encoding="utf-8").read()
 
@@ -147,7 +162,7 @@ def check_html():
         for row in parser.rows:
             la = row[la_idx] if la_idx < len(row) else "<unknown>"
             value = row[grade_idx].strip().lower() if grade_idx < len(row) else ""
-            if value == POST_REFORM_GRADE_VALUE:
+            if value in POST_REFORM_GRADE_VALUES:
                 post_reform_las.append(la)
             elif value in FAILED_GRADE_VALUES:
                 failed_las.append(la)
@@ -174,7 +189,40 @@ def check_html():
             else:
                 warnings.append(message)
 
-    return errors, warnings, info
+    return errors, warnings, info, row_count
+
+
+def check_history(summary_row_count):
+    """
+    Sanity-checks the inspection history CSV (the historic dataset + incremental-scrape
+    cache written by ofsted_ilacs_scrape.py). Historic rows are best-effort parses of
+    old report formats, so data quality isn't judged here - only that the file exists,
+    is well-formed, and holds at least one row per LA in the summary (every LA's most
+    recent inspection must be in the history by construction).
+    """
+    if not os.path.exists(HISTORY_PATH):
+        return [f"{HISTORY_PATH} was not generated"]
+
+    try:
+        with open(HISTORY_PATH, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            columns = reader.fieldnames or []
+            row_count = sum(1 for _ in reader)
+    except (csv.Error, UnicodeDecodeError) as e:
+        return [f"{HISTORY_PATH} could not be parsed as CSV: {e}"]
+
+    errors = []
+    for column in HISTORY_REQUIRED_COLUMNS:
+        if column not in columns:
+            errors.append(f"{HISTORY_PATH} is missing expected column '{column}'")
+
+    if summary_row_count and row_count < summary_row_count:
+        errors.append(
+            f"{HISTORY_PATH} only has {row_count} rows but the summary has {summary_row_count} LAs - "
+            f"the history should contain at least each LA's most recent inspection"
+        )
+
+    return errors
 
 
 def check_xlsx():
@@ -189,8 +237,8 @@ def check_xlsx():
 
 
 def main():
-    html_errors, html_warnings, html_info = check_html()
-    errors = html_errors + check_xlsx()
+    html_errors, html_warnings, html_info, summary_row_count = check_html()
+    errors = html_errors + check_xlsx() + check_history(summary_row_count)
 
     for message in html_info:
         print(f"INFO: {message}")
@@ -209,7 +257,8 @@ def main():
 
     print(
         f"Scrape output looks sane: {HTML_PATH} ({os.path.getsize(HTML_PATH)} bytes), "
-        f"{XLSX_PATH} ({os.path.getsize(XLSX_PATH)} bytes)."
+        f"{XLSX_PATH} ({os.path.getsize(XLSX_PATH)} bytes), "
+        f"{HISTORY_PATH} ({os.path.getsize(HISTORY_PATH)} bytes)."
     )
 
 
