@@ -1,54 +1,219 @@
+<!DOCTYPE html>
+<!--
+  Template for the published summary page (index.html), filled in by save_to_html in
+  ofsted_ilacs_scrape.py via string.Template - the dollar-prefixed placeholders below
+  are substituted at generation time. Edit the design here; the data/fragments in the script.
 
-    <html>
-    <head>
-        <title>Ofsted ILACS Summary</title>
-        <style>
-            .container {
-                display: flex;
-                justify-content: center;
-                align-items: center;
-            }
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 10pt;
-            }
-            table, th, td {
-                border: 1px solid #ddd;
-            }
-            th, td {
-                padding: 5px;
-                text-align: left;
-            }
-        </style>
-    </head>
-    <body>
-        <h1>Ofsted ILACS Summary</h1>
-        <p>
-    Summarised outcomes of published short and standard ILACS inspection reports by Ofsted, refreshed daily.<br/>
-    An expanded version of the shown summary sheet, refreshed concurrently, is available to
-    <a href="ofsted_csc_ilacs_overview.xlsx">download here</a> as an .xlsx file.
-    <br/>Data summary is based on the original <i>ILACS Outcomes Summary</i> published periodically by the ADCS:
-    <a href="https://adcs.org.uk/inspection/article/ilacs-outcomes-summary">https://adcs.org.uk/inspection/article/ilacs-outcomes-summary</a>.
-    <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md">Read the tool/project background details and future work.</a>.<br/>
-    </p>
-        <p>
-    Disclaimer: This summary is built from scraped data direct from https://reports.ofsted.gov.uk/ published PDF inspection report files.
-    As a result of the nuances|variance within the inspection report content or PDF encoding, we're noting some problematic data extraction for a small number of LAs. Including: southend-on-sea, [overall, help_and_protection_grade,care_leavers_grade], nottingham,[inspection_framework, inspection_date],
-    redcar and cleveland,[inspection_framework, inspection_date], knowsley,[inspector_name], stoke-on-trent,[inspector_name]<br/>
-    From around April 2026, Ofsted stopped publishing an overall effectiveness judgement in ILACS reports - LAs inspected since then will show "not reported post reform" for that column rather than a grade; this reflects a genuine change in what Ofsted report, not a scrape error.<br/>
-    <a href="mailto:datatoinsight.enquiries@gmail.com?subject=Ofsted-Scrape-Tool">Feedback</a> on specific problems|inaccuracies|suggestions welcomed.*
-    </p>
-        <p><b>Summary data last updated: 29 07 2026 08:50</b></p>
-        <p><b>LA inspections last updated: []</b></p>
-        <div class="container">
-    <table border="1" class="dataframe">
+  Styling is GOV.UK-*inspired* (typography, spacing, palette) because that's the look
+  this LA/sector audience knows - deliberately NO crown logo, wordmark or anything
+  else implying this is an official government service. Fully self-contained: no
+  external fonts, scripts or stylesheets.
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ofsted ILACS Summary</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%231d70b8'/><text x='50' y='72' font-size='60' text-anchor='middle' fill='white' font-family='Arial'>O</text></svg>">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+            color: #0b0c0c;
+            background: #ffffff;
+            line-height: 1.5;
+            font-size: 16px;
+        }
+        a { color: #1d70b8; }
+        a:hover { color: #003078; }
+        a:focus { outline: 3px solid #ffdd00; outline-offset: 0; }
+
+        .page-header {
+            border-bottom: 10px solid #1d70b8;
+            background: #0b0c0c;
+            color: #ffffff;
+        }
+        .page-header .wrap { padding: 14px 0 10px; }
+        .page-header .service-name {
+            font-size: 22px;
+            font-weight: 700;
+            color: #ffffff;
+            text-decoration: none;
+        }
+        .page-header .service-tag {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: #0b0c0c;
+            background: #ffdd00;
+            border-radius: 2px;
+            vertical-align: middle;
+        }
+
+        .wrap {
+            max-width: 1360px;
+            margin: 0 auto;
+            padding-left: 16px;
+            padding-right: 16px;
+        }
+
+        h1 {
+            font-size: 36px;
+            line-height: 1.2;
+            margin: 28px 0 12px;
+        }
+        .lede { font-size: 18px; margin: 0 0 8px; }
+        .meta-line { color: #505a5f; font-size: 15px; margin: 4px 0; }
+        .meta-line strong { color: #0b0c0c; }
+
+        .downloads { margin: 14px 0 4px; }
+        .download-link {
+            display: inline-block;
+            margin: 0 14px 8px 0;
+            font-weight: 700;
+        }
+
+        /* Headline stats strip */
+        .stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 22px 0 6px;
+            padding: 0;
+            list-style: none;
+        }
+        .stat {
+            flex: 1 1 150px;
+            min-width: 140px;
+            border-left: 6px solid #b1b4b6;
+            background: #f3f2f1;
+            padding: 10px 12px 8px;
+        }
+        .stat .num { display: block; font-size: 30px; font-weight: 700; line-height: 1.1; }
+        .stat .label { display: block; font-size: 14px; color: #505a5f; margin-top: 2px; }
+        .stat.outstanding { border-left-color: #00703c; }
+        .stat.good { border-left-color: #85994b; }
+        .stat.requires-improvement { border-left-color: #f47738; }
+        .stat.inadequate { border-left-color: #d4351c; }
+        .stat.not-reported { border-left-color: #505a5f; }
+        .stat.total { border-left-color: #1d70b8; }
+
+        /* Grade badges in the table */
+        .grade {
+            display: inline-block;
+            padding: 2px 8px;
+            font-size: 13px;
+            font-weight: 700;
+            border-radius: 3px;
+            white-space: nowrap;
+        }
+        .grade-outstanding { background: #cce2d8; color: #005a30; }
+        .grade-good { background: #e7eddc; color: #4c5c26; }
+        .grade-requires-improvement { background: #fcd6c3; color: #6e3619; }
+        .grade-inadequate { background: #f6d7d2; color: #942514; }
+        .grade-not-reported { background: #e8e8e8; color: #383f43; }
+        .grade-no-data { background: #f3f2f1; color: #6f777b; font-weight: 400; font-style: italic; }
+
+        /* Table */
+        .table-scroll {
+            overflow-x: auto;
+            margin: 18px 0 8px;
+            border-top: 2px solid #0b0c0c;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 8px 10px;
+            text-align: left;
+            border-bottom: 1px solid #b1b4b6;
+            vertical-align: top;
+        }
+        th {
+            font-weight: 700;
+            background: #ffffff;
+            border-bottom: 2px solid #0b0c0c;
+            white-space: nowrap;
+        }
+        tbody tr:hover { background: #f8f8f8; }
+        td a { word-break: break-all; }
+
+        .disclaimer {
+            margin: 26px 0 12px;
+            padding: 14px 16px;
+            border-left: 6px solid #b1b4b6;
+            background: #f3f2f1;
+            font-size: 14px;
+            color: #383f43;
+        }
+        .disclaimer p { margin: 0 0 8px; }
+        .disclaimer p:last-child { margin-bottom: 0; }
+
+        .page-footer {
+            margin-top: 30px;
+            border-top: 1px solid #b1b4b6;
+            padding: 16px 0 30px;
+            font-size: 14px;
+            color: #505a5f;
+        }
+
+        @media (max-width: 640px) {
+            h1 { font-size: 28px; }
+            .stat .num { font-size: 24px; }
+        }
+    </style>
+</head>
+<body>
+    <header class="page-header">
+        <div class="wrap">
+            <span class="service-name">Ofsted ILACS Summary</span>
+            <span class="service-tag">Unofficial</span>
+        </div>
+    </header>
+
+    <main class="wrap">
+        <h1>Ofsted ILACS inspection outcomes</h1>
+
+        <p class="lede">Summarised outcomes of every English local authority's most recent published
+    short or standard ILACS inspection, scraped daily from published
+    <a href="https://reports.ofsted.gov.uk/">Ofsted inspection reports</a>.
+    Recreates on demand the <i>ILACS Outcomes Summary</i>
+    <a href="https://adcs.org.uk/inspection/article/ilacs-outcomes-summary">published periodically by the ADCS</a> -
+    see the <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool/blob/main/README.md">project README</a>
+    for background and future work.</p>
+
+        <div class="downloads">
+    <a class="download-link" href="ofsted_csc_ilacs_overview.xlsx">&#11015;&#65039; Download the full summary (.xlsx)</a>
+    <a class="download-link" href="ofsted_csc_ilacs_history.csv">&#11015;&#65039; Download the full inspection history (.csv)</a>
+    </div>
+
+        <ul class="stats">
+            <li class="stat total"><span class="num">153</span><span class="label">Local authorities covered</span></li>
+            <li class="stat outstanding"><span class="num">46</span><span class="label">Outstanding</span></li>
+            <li class="stat good"><span class="num">63</span><span class="label">Good</span></li>
+            <li class="stat requires-improvement"><span class="num">25</span><span class="label">Requires improvement</span></li>
+            <li class="stat inadequate"><span class="num">12</span><span class="label">Inadequate</span></li>
+            <li class="stat not-reported"><span class="num">7</span><span class="label">Not reported (post-2026 framework)</span></li>
+        </ul>
+
+        <p class="meta-line"><strong>Summary data last updated:</strong> 30 July 2026, 08:21 BST</p>
+        <p class="meta-line"><strong>New or updated inspection reports this refresh:</strong> Bath And North East Somerset, Bedford, Blackburn With Darwen, Blackpool, Bracknell Forest, Bradford, Brent, Buckinghamshire, Bury, Camden, Central Bedfordshire, Coventry, Darlington, Derby, Devon, Dorset, Durham, Gloucestershire, Haringey, Herefordshire, Kent, Kingston Upon Hull, Lambeth, Leeds, Liverpool, Luton, Manchester, Merton, Middlesbrough, Newcastle Upon Tyne, Newham, Norfolk, North East Lincolnshire, North Lincolnshire, North Northamptonshire, Redcar And Cleveland, Richmond Upon Thames, Rotherham, Sandwell, Sefton, Shropshire, Solihull, Somerset, Southwark, Stockport, Stoke-On-Trent, Surrey, Sutton, Torbay, Wakefield, Walsall, Wandsworth, Warwickshire, West Berkshire, West Northamptonshire, Wigan, Wolverhampton, York</p>
+
+        <div class="table-scroll">
+<table border="1" class="dataframe">
   <thead>
     <tr style="text-align: right;">
       <th>URN</th>
-      <th>La Code</th>
+      <th>LA Code</th>
       <th>Region Code</th>
-      <th>La Code New</th>
+      <th>ONS Code</th>
       <th>Local Authority</th>
       <th>Inspection Link</th>
       <th>Overall Effectiveness Grade</th>
@@ -69,14 +234,14 @@
       <td>E08000038</td>
       <td>Barnsley</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50231520">ofsted.gov.uk/50231520</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Anna Gravelle</td>
       <td>11/09/2023</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80427</td>
@@ -85,14 +250,14 @@
       <td>E06000022</td>
       <td>Bath And North East Somerset</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50283932">ofsted.gov.uk/50283932</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Amanda Maxwell</td>
       <td>09/06/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80428</td>
@@ -101,14 +266,14 @@
       <td>E06000055</td>
       <td>Bedford</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50285308">ofsted.gov.uk/50285308</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>short</td>
       <td>Amanda Maxwell</td>
       <td>14/07/2025</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80429</td>
@@ -117,14 +282,14 @@
       <td>E08000025</td>
       <td>Birmingham</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50214110">ofsted.gov.uk/50214110</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>John Roughton</td>
       <td>20/02/2023</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80430</td>
@@ -133,14 +298,14 @@
       <td>E06000008</td>
       <td>Blackburn With Darwen</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50275023">ofsted.gov.uk/50275023</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Gareth Dakin</td>
       <td>03/03/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80431</td>
@@ -149,14 +314,14 @@
       <td>E06000009</td>
       <td>Blackpool</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50308110">ofsted.gov.uk/50308110</a></td>
-      <td>not_reported_post_reform</td>
+      <td><span class="grade grade-not-reported">Not reported (2026 framework)</span></td>
       <td>standard</td>
       <td>Margaret Burke</td>
       <td>08/06/2026</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80432</td>
@@ -165,14 +330,14 @@
       <td>E08000001</td>
       <td>Bolton</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50231519">ofsted.gov.uk/50231519</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Lisa Walsh</td>
       <td>11/09/2023</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>2532287</td>
@@ -181,14 +346,14 @@
       <td>E06000058</td>
       <td>Bournemouth, Christchurch & Poole</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50267804">ofsted.gov.uk/50267804</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>John Roughton</td>
       <td>02/12/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80436</td>
@@ -197,14 +362,14 @@
       <td>E06000036</td>
       <td>Bracknell Forest</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50294205">ofsted.gov.uk/50294205</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Naintara Khosla</td>
       <td>08/12/2025</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80438</td>
@@ -213,14 +378,14 @@
       <td>E06000043</td>
       <td>Brighton And Hove</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50246981">ofsted.gov.uk/50246981</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>None</td>
       <td>Máire Atherton</td>
       <td></td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80441</td>
@@ -229,14 +394,14 @@
       <td>E06000023</td>
       <td>Bristol</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50210578">ofsted.gov.uk/50210578</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Tracey Ledder</td>
       <td>16/01/2023</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80442</td>
@@ -245,14 +410,14 @@
       <td>E06000060</td>
       <td>Buckinghamshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50276975">ofsted.gov.uk/50276975</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Nick Bennison</td>
       <td>27/01/2025</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80443</td>
@@ -261,14 +426,14 @@
       <td>E08000002</td>
       <td>Bury</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50283347">ofsted.gov.uk/50283347</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Rebecca Dubbins</td>
       <td>09/06/2025</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80444</td>
@@ -277,14 +442,14 @@
       <td>E08000033</td>
       <td>Calderdale</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50246982">ofsted.gov.uk/50246982</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Naintara Khosla</td>
       <td>19/02/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80445</td>
@@ -293,14 +458,14 @@
       <td>E10000003</td>
       <td>Cambridgeshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50247204">ofsted.gov.uk/50247204</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Lisa Walsh</td>
       <td>04/03/2024</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80446</td>
@@ -309,14 +474,14 @@
       <td>E06000056</td>
       <td>Central Bedfordshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50275136">ofsted.gov.uk/50275136</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Rebecca Quested</td>
       <td>10/03/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80447</td>
@@ -325,14 +490,14 @@
       <td>E06000049</td>
       <td>Cheshire East</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50247203">ofsted.gov.uk/50247203</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>standard</td>
       <td>Teresa Godfrey</td>
       <td>26/02/2024</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>inadequate</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
     </tr>
     <tr>
       <td>80448</td>
@@ -341,14 +506,14 @@
       <td>E06000050</td>
       <td>Cheshire West And Chester</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50255617">ofsted.gov.uk/50255617</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>short</td>
       <td>Alison Smale</td>
       <td>15/07/2024</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80449</td>
@@ -357,14 +522,14 @@
       <td>E08000032</td>
       <td>Bradford</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50302265">ofsted.gov.uk/50302265</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Catherine Heron</td>
       <td>12/01/2026</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80450</td>
@@ -373,14 +538,14 @@
       <td>E09000001</td>
       <td>London Corporation</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50260648">ofsted.gov.uk/50260648</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Christine Kennet</td>
       <td>23/09/2024</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80451</td>
@@ -389,14 +554,14 @@
       <td>E08000036</td>
       <td>Wakefield</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50282475">ofsted.gov.uk/50282475</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Christine Kennet</td>
       <td>24/03/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80453</td>
@@ -405,14 +570,14 @@
       <td>E06000014</td>
       <td>York</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50274368">ofsted.gov.uk/50274368</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>standard</td>
       <td>Rachel Fairhurst</td>
       <td>24/02/2025</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80454</td>
@@ -421,14 +586,14 @@
       <td>E06000052</td>
       <td>Cornwall</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50255376">ofsted.gov.uk/50255376</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Sarah Canto</td>
       <td>01/07/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80455</td>
@@ -437,14 +602,14 @@
       <td>E06000053</td>
       <td>Isles Of Scilly</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50226696">ofsted.gov.uk/50226696</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>short</td>
       <td>Tracey Ledder</td>
       <td>11/07/2023</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80456</td>
@@ -453,14 +618,14 @@
       <td>E08000026</td>
       <td>Coventry</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50301676">ofsted.gov.uk/50301676</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Sophie Wales</td>
       <td>09/03/2026</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>2733690</td>
@@ -469,14 +634,14 @@
       <td>E06000063</td>
       <td>Cumberland</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50262710">ofsted.gov.uk/50262710</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Lisa Walsh</td>
       <td>07/10/2024</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80458</td>
@@ -485,14 +650,14 @@
       <td>E06000005</td>
       <td>Darlington</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50298056">ofsted.gov.uk/50298056</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Gareth Dakin</td>
       <td>09/02/2026</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80459</td>
@@ -501,14 +666,14 @@
       <td>E06000015</td>
       <td>Derby</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50281395">ofsted.gov.uk/50281395</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Margaret Burke</td>
       <td>19/05/2025</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80460</td>
@@ -517,14 +682,14 @@
       <td>E10000007</td>
       <td>Derbyshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50237006">ofsted.gov.uk/50237006</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>John Roughton</td>
       <td>30/10/2023</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80461</td>
@@ -533,14 +698,14 @@
       <td>E10000008</td>
       <td>Devon</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50276862">ofsted.gov.uk/50276862</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>standard</td>
       <td>None</td>
       <td>30/09/2024</td>
-      <td>requires improvement</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
     </tr>
     <tr>
       <td>80462</td>
@@ -549,14 +714,14 @@
       <td>E08000017</td>
       <td>Doncaster</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50271937">ofsted.gov.uk/50271937</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Catherine Heron</td>
       <td>20/01/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>2532283</td>
@@ -565,14 +730,14 @@
       <td>E06000059</td>
       <td>Dorset</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50276411">ofsted.gov.uk/50276411</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Sarah Canto</td>
       <td>17/03/2025</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80464</td>
@@ -581,13 +746,13 @@
       <td>E08000027</td>
       <td>Dudley</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50204402">ofsted.gov.uk/50204402</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>John Roughton</td>
       <td>31/10/2022</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>inspection_pre_dates_judgement</td>
     </tr>
     <tr>
@@ -597,14 +762,14 @@
       <td>E06000047</td>
       <td>Durham</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50276863">ofsted.gov.uk/50276863</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Ceri Evans</td>
       <td>24/03/2025</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80466</td>
@@ -613,14 +778,14 @@
       <td>E06000011</td>
       <td>East Riding Of Yorkshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50212242">ofsted.gov.uk/50212242</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Louise Walker</td>
       <td>30/01/2023</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80467</td>
@@ -629,14 +794,14 @@
       <td>E10000011</td>
       <td>East Sussex</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50239111">ofsted.gov.uk/50239111</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Tom Anthony</td>
       <td>11/12/2023</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80468</td>
@@ -645,14 +810,14 @@
       <td>E10000012</td>
       <td>Essex</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50225703">ofsted.gov.uk/50225703</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Kendra Bell</td>
       <td>26/06/2023</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80469</td>
@@ -661,14 +826,14 @@
       <td>E08000037</td>
       <td>Gateshead</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50267802">ofsted.gov.uk/50267802</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Rachel Fairhurst</td>
       <td>02/12/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80470</td>
@@ -677,14 +842,14 @@
       <td>E10000013</td>
       <td>Gloucestershire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50283717">ofsted.gov.uk/50283717</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Sophie Wales</td>
       <td>09/06/2025</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80471</td>
@@ -693,14 +858,14 @@
       <td>E06000006</td>
       <td>Halton</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252259">ofsted.gov.uk/50252259</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>standard</td>
       <td>Lisa Summers</td>
       <td>13/05/2024</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
     </tr>
     <tr>
       <td>80472</td>
@@ -709,14 +874,14 @@
       <td>E10000014</td>
       <td>Hampshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50253183">ofsted.gov.uk/50253183</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Kendra Bell</td>
       <td>10/06/2024</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80473</td>
@@ -725,14 +890,14 @@
       <td>E06000001</td>
       <td>Hartlepool</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50247208">ofsted.gov.uk/50247208</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Louise Walker</td>
       <td>18/03/2024</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80474</td>
@@ -741,14 +906,14 @@
       <td>E06000019</td>
       <td>Herefordshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50293401">ofsted.gov.uk/50293401</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Rebecca Dubbins</td>
       <td>10/11/2025</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80475</td>
@@ -757,14 +922,14 @@
       <td>E10000015</td>
       <td>Hertfordshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50210577">ofsted.gov.uk/50210577</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Sarah Canto</td>
       <td>23/01/2023</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80419</td>
@@ -773,14 +938,14 @@
       <td>E06000046</td>
       <td>Isle Of Wight</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50235617">ofsted.gov.uk/50235617</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Amanda Maxwell</td>
       <td>30/10/2023</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80476</td>
@@ -789,14 +954,14 @@
       <td>E10000016</td>
       <td>Kent</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50294428">ofsted.gov.uk/50294428</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Steve Lowe</td>
       <td>03/11/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80477</td>
@@ -805,14 +970,14 @@
       <td>E06000010</td>
       <td>Kingston Upon Hull</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50301678">ofsted.gov.uk/50301678</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Rachel Fairhurst</td>
       <td>02/03/2026</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80478</td>
@@ -821,14 +986,14 @@
       <td>E08000034</td>
       <td>Kirklees</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50255618">ofsted.gov.uk/50255618</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Rachel Griffiths</td>
       <td>08/07/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80479</td>
@@ -837,14 +1002,14 @@
       <td>E08000011</td>
       <td>Knowsley</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50267008">ofsted.gov.uk/50267008</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>standard</td>
       <td>Rebekah Tucker</td>
       <td>18/11/2024</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>requires improvement</td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
     </tr>
     <tr>
       <td>80480</td>
@@ -853,13 +1018,13 @@
       <td>E10000017</td>
       <td>Lancashire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50205966">ofsted.gov.uk/50205966</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Sarah Canto</td>
       <td>28/11/2022</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>inspection_pre_dates_judgement</td>
     </tr>
     <tr>
@@ -869,14 +1034,14 @@
       <td>E08000035</td>
       <td>Leeds</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50284438">ofsted.gov.uk/50284438</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Catherine Heron</td>
       <td>30/06/2025</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80482</td>
@@ -885,14 +1050,14 @@
       <td>E06000016</td>
       <td>Leicester</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50267800">ofsted.gov.uk/50267800</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>short</td>
       <td>Tom Anthony</td>
       <td>23/09/2024</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80483</td>
@@ -901,14 +1066,14 @@
       <td>E10000018</td>
       <td>Leicestershire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252253">ofsted.gov.uk/50252253</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>standard</td>
       <td>Ceri Evans</td>
       <td>22/04/2024</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80484</td>
@@ -917,14 +1082,14 @@
       <td>E10000019</td>
       <td>Lincolnshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50219720">ofsted.gov.uk/50219720</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Margaret Burke</td>
       <td>24/04/2023</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80485</td>
@@ -933,14 +1098,14 @@
       <td>E08000012</td>
       <td>Liverpool</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50306784">ofsted.gov.uk/50306784</a></td>
-      <td>not_reported_post_reform</td>
+      <td><span class="grade grade-not-reported">Not reported (2026 framework)</span></td>
       <td>standard</td>
       <td>Teresa Godfrey</td>
       <td>11/05/2026</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80486</td>
@@ -949,14 +1114,14 @@
       <td>E09000002</td>
       <td>Barking And Dagenham</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50227183">ofsted.gov.uk/50227183</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Naintara Khosla</td>
       <td>10/07/2023</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80487</td>
@@ -965,14 +1130,14 @@
       <td>E09000003</td>
       <td>Barnet</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50253182">ofsted.gov.uk/50253182</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Naintara Khosla</td>
       <td>10/06/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80488</td>
@@ -981,14 +1146,14 @@
       <td>E09000004</td>
       <td>Bexley</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50212243">ofsted.gov.uk/50212243</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Tom Anthony</td>
       <td>06/02/2023</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80489</td>
@@ -997,14 +1162,14 @@
       <td>E09000005</td>
       <td>Brent</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50304386">ofsted.gov.uk/50304386</a></td>
-      <td>not_reported_post_reform</td>
+      <td><span class="grade grade-not-reported">Not reported (2026 framework)</span></td>
       <td>short</td>
       <td>Monique Lindsay</td>
       <td>27/04/2026</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80490</td>
@@ -1013,14 +1178,14 @@
       <td>E09000006</td>
       <td>Bromley</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50237004">ofsted.gov.uk/50237004</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Claire Beckingham</td>
       <td>13/11/2023</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80491</td>
@@ -1029,14 +1194,14 @@
       <td>E09000007</td>
       <td>Camden</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50274369">ofsted.gov.uk/50274369</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Claire Beckingham</td>
       <td>03/03/2025</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80492</td>
@@ -1045,14 +1210,14 @@
       <td>E09000008</td>
       <td>Croydon</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50263391">ofsted.gov.uk/50263391</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Christine Kennet</td>
       <td>14/10/2024</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80493</td>
@@ -1061,14 +1226,14 @@
       <td>E09000009</td>
       <td>Ealing</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252258">ofsted.gov.uk/50252258</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Tom Anthony</td>
       <td>22/04/2024</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80494</td>
@@ -1077,14 +1242,14 @@
       <td>E09000010</td>
       <td>Enfield</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50256007">ofsted.gov.uk/50256007</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Christine Kennet</td>
       <td>22/07/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80495</td>
@@ -1093,14 +1258,14 @@
       <td>E09000011</td>
       <td>Greenwich</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252576">ofsted.gov.uk/50252576</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Tom Anthony</td>
       <td>03/06/2024</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80496</td>
@@ -1109,14 +1274,14 @@
       <td>E09000012</td>
       <td>Hackney</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50255165">ofsted.gov.uk/50255165</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Margaret Burke</td>
       <td>01/07/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80497</td>
@@ -1125,14 +1290,14 @@
       <td>E09000013</td>
       <td>Hammersmith And Fulham</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50247205">ofsted.gov.uk/50247205</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Christine Kennet</td>
       <td>11/03/2024</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80498</td>
@@ -1141,14 +1306,14 @@
       <td>E09000014</td>
       <td>Haringey</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50295650">ofsted.gov.uk/50295650</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Christine Kennet</td>
       <td>12/01/2026</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80499</td>
@@ -1157,14 +1322,14 @@
       <td>E09000015</td>
       <td>Harrow</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50270419">ofsted.gov.uk/50270419</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>short</td>
       <td>Rebekah Tucker</td>
       <td>20/01/2025</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
-      <td>inadequate</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
     </tr>
     <tr>
       <td>80500</td>
@@ -1173,14 +1338,14 @@
       <td>E09000016</td>
       <td>Havering</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50239788">ofsted.gov.uk/50239788</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>standard</td>
       <td>Claire Beckingham</td>
       <td>11/12/2023</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80501</td>
@@ -1189,14 +1354,14 @@
       <td>E09000017</td>
       <td>Hillingdon</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50233295">ofsted.gov.uk/50233295</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Christine Kennet</td>
       <td>02/10/2023</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80503</td>
@@ -1205,14 +1370,14 @@
       <td>E09000018</td>
       <td>Hounslow</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50234334">ofsted.gov.uk/50234334</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Nick Bennison</td>
       <td>16/10/2023</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80505</td>
@@ -1221,14 +1386,14 @@
       <td>E09000019</td>
       <td>Islington</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50267801">ofsted.gov.uk/50267801</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Sarah Canto</td>
       <td>02/12/2024</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80506</td>
@@ -1237,14 +1402,14 @@
       <td>E09000022</td>
       <td>Lambeth</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50296623">ofsted.gov.uk/50296623</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Jenny -Ellen Scotland</td>
       <td>12/01/2026</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80508</td>
@@ -1253,14 +1418,14 @@
       <td>E09000023</td>
       <td>Lewisham</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50238709">ofsted.gov.uk/50238709</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Nicki Shaw</td>
       <td>04/12/2023</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80510</td>
@@ -1269,14 +1434,14 @@
       <td>E09000024</td>
       <td>Merton</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50285309">ofsted.gov.uk/50285309</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Claire Beckingham</td>
       <td>14/07/2025</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80511</td>
@@ -1285,14 +1450,14 @@
       <td>E09000025</td>
       <td>Newham</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50293404">ofsted.gov.uk/50293404</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Ceri Evans</td>
       <td>10/11/2025</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80512</td>
@@ -1301,14 +1466,14 @@
       <td>E09000026</td>
       <td>Redbridge</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50253184">ofsted.gov.uk/50253184</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Brenda Mclaughlin</td>
       <td>10/06/2024</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80513</td>
@@ -1317,14 +1482,14 @@
       <td>E09000027</td>
       <td>Richmond Upon Thames</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50284336">ofsted.gov.uk/50284336</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Nick Bennison</td>
       <td>30/06/2025</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80514</td>
@@ -1333,14 +1498,14 @@
       <td>E09000028</td>
       <td>Southwark</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50301679">ofsted.gov.uk/50301679</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Jenny -Ellen Scotland</td>
       <td>09/03/2026</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80515</td>
@@ -1349,14 +1514,14 @@
       <td>E09000029</td>
       <td>Sutton</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50283346">ofsted.gov.uk/50283346</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Gareth Dakin</td>
       <td>16/06/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80516</td>
@@ -1365,14 +1530,14 @@
       <td>E09000030</td>
       <td>Tower Hamlets</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50266090">ofsted.gov.uk/50266090</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Amanda Maxwell</td>
       <td>11/11/2024</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80517</td>
@@ -1381,14 +1546,14 @@
       <td>E09000031</td>
       <td>Waltham Forest</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50255164">ofsted.gov.uk/50255164</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Jo Warburton</td>
       <td>08/07/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80518</td>
@@ -1397,14 +1562,14 @@
       <td>E09000032</td>
       <td>Wandsworth</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50301929">ofsted.gov.uk/50301929</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Monique Lindsay</td>
       <td>02/03/2026</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80519</td>
@@ -1413,14 +1578,14 @@
       <td>E09000033</td>
       <td>Westminster</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50266091">ofsted.gov.uk/50266091</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Naintara Khosla</td>
       <td>11/11/2024</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80520</td>
@@ -1429,14 +1594,14 @@
       <td>E06000032</td>
       <td>Luton</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50296961">ofsted.gov.uk/50296961</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Rebecca Dubbins</td>
       <td>19/01/2026</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80521</td>
@@ -1445,14 +1610,14 @@
       <td>E08000003</td>
       <td>Manchester</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50290914">ofsted.gov.uk/50290914</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>standard</td>
       <td>Sophie Wales</td>
       <td>22/09/2025</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80522</td>
@@ -1461,14 +1626,14 @@
       <td>E06000035</td>
       <td>Medway</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50227723">ofsted.gov.uk/50227723</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Amanda Maxwell</td>
       <td>17/07/2023</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80523</td>
@@ -1477,14 +1642,14 @@
       <td>E06000002</td>
       <td>Middlesbrough</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50308109">ofsted.gov.uk/50308109</a></td>
-      <td>not_reported_post_reform</td>
+      <td><span class="grade grade-not-reported">Not reported (2026 framework)</span></td>
       <td>standard</td>
       <td>Nabeel Hussain</td>
       <td>08/06/2026</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80524</td>
@@ -1493,14 +1658,14 @@
       <td>E06000042</td>
       <td>Milton Keynes</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50264642">ofsted.gov.uk/50264642</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Brenda Mclaughlin</td>
       <td>28/10/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80525</td>
@@ -1509,14 +1674,14 @@
       <td>E08000021</td>
       <td>Newcastle Upon Tyne</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50280258">ofsted.gov.uk/50280258</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Rachel Fairhurst</td>
       <td>12/05/2025</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80418</td>
@@ -1525,14 +1690,14 @@
       <td>E10000020</td>
       <td>Norfolk</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50301680">ofsted.gov.uk/50301680</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Rodica Cobarzan</td>
       <td>23/02/2026</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80526</td>
@@ -1541,14 +1706,14 @@
       <td>E06000012</td>
       <td>North East Lincolnshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50285393">ofsted.gov.uk/50285393</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Ceri Evans</td>
       <td>14/07/2025</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80527</td>
@@ -1557,14 +1722,14 @@
       <td>E06000013</td>
       <td>North Lincolnshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50300420">ofsted.gov.uk/50300420</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Rachel Griffiths</td>
       <td>16/03/2026</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>2637539</td>
@@ -1573,14 +1738,14 @@
       <td>E06000061</td>
       <td>North Northamptonshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50306548">ofsted.gov.uk/50306548</a></td>
-      <td>not_reported_post_reform</td>
+      <td><span class="grade grade-not-reported">Not reported (2026 framework)</span></td>
       <td>standard</td>
       <td>David Cohen</td>
       <td>11/05/2026</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80528</td>
@@ -1589,14 +1754,14 @@
       <td>E06000024</td>
       <td>North Somerset</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50216275">ofsted.gov.uk/50216275</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Anna Gravelle</td>
       <td>13/03/2023</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80529</td>
@@ -1605,14 +1770,14 @@
       <td>E08000022</td>
       <td>North Tyneside</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50266092">ofsted.gov.uk/50266092</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Ceri Evans</td>
       <td>11/11/2024</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80530</td>
@@ -1621,14 +1786,14 @@
       <td>E06000065</td>
       <td>North Yorkshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50226213">ofsted.gov.uk/50226213</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Jan Edwards</td>
       <td>03/07/2023</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80532</td>
@@ -1637,14 +1802,14 @@
       <td>E06000057</td>
       <td>Northumberland</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252256">ofsted.gov.uk/50252256</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Andy Waugh</td>
       <td>20/05/2024</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80533</td>
@@ -1653,14 +1818,14 @@
       <td>E06000018</td>
       <td>Nottingham</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50192198">ofsted.gov.uk/50192198</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>None</td>
       <td>Andy Waugh</td>
       <td></td>
-      <td>requires improvement</td>
-      <td>inadequate</td>
-      <td>requires improvement</td>
-      <td>inadequate</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
     </tr>
     <tr>
       <td>80534</td>
@@ -1669,14 +1834,14 @@
       <td>E10000024</td>
       <td>Nottinghamshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252254">ofsted.gov.uk/50252254</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Nicki Shaw</td>
       <td>20/05/2024</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80535</td>
@@ -1685,14 +1850,14 @@
       <td>E08000004</td>
       <td>Oldham</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252252">ofsted.gov.uk/50252252</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Rebekah Tucker</td>
       <td>13/05/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80536</td>
@@ -1701,14 +1866,14 @@
       <td>E10000025</td>
       <td>Oxfordshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50243682">ofsted.gov.uk/50243682</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Nicki Shaw</td>
       <td>12/02/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80537</td>
@@ -1717,14 +1882,14 @@
       <td>E06000031</td>
       <td>Peterborough</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50238583">ofsted.gov.uk/50238583</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>standard</td>
       <td>Russel Breyer</td>
       <td>27/11/2023</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>inadequate</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
     </tr>
     <tr>
       <td>80538</td>
@@ -1733,14 +1898,14 @@
       <td>E06000026</td>
       <td>Plymouth</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50241802">ofsted.gov.uk/50241802</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Tracey Ledder</td>
       <td>22/01/2024</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80539</td>
@@ -1749,14 +1914,14 @@
       <td>E06000044</td>
       <td>Portsmouth</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50221956">ofsted.gov.uk/50221956</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Christine Kennet</td>
       <td>15/05/2023</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80540</td>
@@ -1765,14 +1930,14 @@
       <td>E06000038</td>
       <td>Reading</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252257">ofsted.gov.uk/50252257</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Christine Kennet</td>
       <td>22/04/2024</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80541</td>
@@ -1781,14 +1946,14 @@
       <td>E06000003</td>
       <td>Redcar And Cleveland</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50294204">ofsted.gov.uk/50294204</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Rachel Fairhurst</td>
       <td>01/12/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80542</td>
@@ -1797,14 +1962,14 @@
       <td>E08000005</td>
       <td>Rochdale</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50211330">ofsted.gov.uk/50211330</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Lisa Walsh</td>
       <td>23/01/2023</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80543</td>
@@ -1813,14 +1978,14 @@
       <td>E08000018</td>
       <td>Rotherham</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50292638">ofsted.gov.uk/50292638</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Catherine Heron</td>
       <td>03/11/2025</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80544</td>
@@ -1829,14 +1994,14 @@
       <td>E09000020</td>
       <td>Kensington And Chelsea</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50266093">ofsted.gov.uk/50266093</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Nick Bennison</td>
       <td>11/11/2024</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80545</td>
@@ -1845,14 +2010,14 @@
       <td>E09000021</td>
       <td>Kingston Upon Thames</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50267803">ofsted.gov.uk/50267803</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Nicki Shaw</td>
       <td>02/12/2024</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80546</td>
@@ -1861,14 +2026,14 @@
       <td>E06000040</td>
       <td>Windsor & Maidenhead</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50261980">ofsted.gov.uk/50261980</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Claire Beckingham</td>
       <td>07/10/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80547</td>
@@ -1877,14 +2042,14 @@
       <td>E06000017</td>
       <td>Rutland</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252255">ofsted.gov.uk/50252255</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Rachel Griffiths</td>
       <td>15/04/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80548</td>
@@ -1893,14 +2058,14 @@
       <td>E08000006</td>
       <td>Salford</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50237003">ofsted.gov.uk/50237003</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Kathryn Grindrod</td>
       <td>06/11/2023</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80549</td>
@@ -1909,14 +2074,14 @@
       <td>E08000028</td>
       <td>Sandwell</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50291983">ofsted.gov.uk/50291983</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Monique Lindsay</td>
       <td>13/10/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80550</td>
@@ -1925,14 +2090,14 @@
       <td>E08000014</td>
       <td>Sefton</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50284335">ofsted.gov.uk/50284335</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Lisa Walsh</td>
       <td>23/06/2025</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80551</td>
@@ -1941,14 +2106,14 @@
       <td>E08000039</td>
       <td>Sheffield</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50231897">ofsted.gov.uk/50231897</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Rachel Griffiths</td>
       <td>11/09/2023</td>
-      <td>good</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80552</td>
@@ -1957,14 +2122,14 @@
       <td>E06000051</td>
       <td>Shropshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50284334">ofsted.gov.uk/50284334</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>standard</td>
       <td>Jenny -Ellen Scotland</td>
       <td>23/06/2025</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80553</td>
@@ -1973,14 +2138,14 @@
       <td>E06000039</td>
       <td>Slough</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50211331">ofsted.gov.uk/50211331</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Amanda Maxwell</td>
       <td>23/01/2023</td>
-      <td>inadequate</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80554</td>
@@ -1989,14 +2154,14 @@
       <td>E08000029</td>
       <td>Solihull</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50293398">ofsted.gov.uk/50293398</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Steve Bailey</td>
       <td>03/11/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80555</td>
@@ -2005,14 +2170,14 @@
       <td>E06000066</td>
       <td>Somerset</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50304387">ofsted.gov.uk/50304387</a></td>
-      <td>not_reported_post_reform</td>
+      <td><span class="grade grade-not-reported">Not reported (2026 framework)</span></td>
       <td>short</td>
       <td>Alison Smale</td>
       <td>27/04/2026</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80556</td>
@@ -2021,14 +2186,14 @@
       <td>E06000025</td>
       <td>South Gloucestershire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50253185">ofsted.gov.uk/50253185</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Anna Gravelle</td>
       <td>03/06/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80557</td>
@@ -2037,13 +2202,13 @@
       <td>E08000023</td>
       <td>South Tyneside</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50216273">ofsted.gov.uk/50216273</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>short</td>
       <td>Rebecca Quested</td>
       <td>05/12/2022</td>
-      <td>inadequate</td>
-      <td>requires improvement</td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>inspection_pre_dates_judgement</td>
     </tr>
     <tr>
@@ -2053,14 +2218,14 @@
       <td>E06000045</td>
       <td>Southampton</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50224705">ofsted.gov.uk/50224705</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Tom Anthony</td>
       <td>05/06/2023</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80559</td>
@@ -2069,14 +2234,14 @@
       <td>E06000033</td>
       <td>Southend-On-Sea</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50263392">ofsted.gov.uk/50263392</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Margaret Burke</td>
       <td>14/10/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80560</td>
@@ -2085,14 +2250,14 @@
       <td>E08000013</td>
       <td>St Helens</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50227184">ofsted.gov.uk/50227184</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Russel Breyer</td>
       <td>10/07/2023</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80561</td>
@@ -2101,14 +2266,14 @@
       <td>E10000028</td>
       <td>Staffordshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50237007">ofsted.gov.uk/50237007</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>short</td>
       <td>Alison Smale</td>
       <td>06/11/2023</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80562</td>
@@ -2117,14 +2282,14 @@
       <td>E08000007</td>
       <td>Stockport</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50282103">ofsted.gov.uk/50282103</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Lisa Summers</td>
       <td>12/05/2025</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80563</td>
@@ -2133,14 +2298,14 @@
       <td>E06000004</td>
       <td>Stockton-On-Tees</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50215915">ofsted.gov.uk/50215915</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Joanna Warburton</td>
       <td>06/03/2023</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80564</td>
@@ -2149,14 +2314,14 @@
       <td>E06000021</td>
       <td>Stoke-On-Trent</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50282104">ofsted.gov.uk/50282104</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>John Roughton</td>
       <td>12/05/2025</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80565</td>
@@ -2165,14 +2330,14 @@
       <td>E10000029</td>
       <td>Suffolk</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50255285">ofsted.gov.uk/50255285</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>short</td>
       <td>Rebecca Quested</td>
       <td>03/06/2024</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80566</td>
@@ -2181,14 +2346,14 @@
       <td>E08000024</td>
       <td>Sunderland</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50271150">ofsted.gov.uk/50271150</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Louise Walker</td>
       <td>27/01/2025</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80567</td>
@@ -2197,14 +2362,14 @@
       <td>E10000030</td>
       <td>Surrey</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50276410">ofsted.gov.uk/50276410</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Rachel Griffiths</td>
       <td>17/03/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80568</td>
@@ -2213,14 +2378,14 @@
       <td>E06000030</td>
       <td>Swindon</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50227724">ofsted.gov.uk/50227724</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>standard</td>
       <td>Nick Bennison</td>
       <td>17/07/2023</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80569</td>
@@ -2229,14 +2394,14 @@
       <td>E08000008</td>
       <td>Tameside</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50239562">ofsted.gov.uk/50239562</a></td>
-      <td>inadequate</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
       <td>standard</td>
       <td>None</td>
       <td>04/12/2023</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>inadequate</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-inadequate">Inadequate</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80570</td>
@@ -2245,14 +2410,14 @@
       <td>E06000020</td>
       <td>Telford & Wrekin</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252260">ofsted.gov.uk/50252260</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Rebecca Quested</td>
       <td>29/04/2024</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80571</td>
@@ -2261,14 +2426,14 @@
       <td>E06000034</td>
       <td>Thurrock</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50260250">ofsted.gov.uk/50260250</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Rachel Griffiths</td>
       <td>16/09/2024</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80572</td>
@@ -2277,14 +2442,14 @@
       <td>E06000027</td>
       <td>Torbay</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50295967">ofsted.gov.uk/50295967</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Steve Lowe</td>
       <td>12/01/2026</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80573</td>
@@ -2293,13 +2458,13 @@
       <td>E08000009</td>
       <td>Trafford</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50206433">ofsted.gov.uk/50206433</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Nick Bennison</td>
       <td>21/11/2022</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>inspection_pre_dates_judgement</td>
     </tr>
     <tr>
@@ -2309,14 +2474,14 @@
       <td>E08000030</td>
       <td>Walsall</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50281396">ofsted.gov.uk/50281396</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Nick Bennison</td>
       <td>12/05/2025</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80575</td>
@@ -2325,14 +2490,14 @@
       <td>E06000007</td>
       <td>Warrington</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50253719">ofsted.gov.uk/50253719</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Lisa Walsh</td>
       <td>10/06/2024</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80576</td>
@@ -2341,14 +2506,14 @@
       <td>E10000031</td>
       <td>Warwickshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50289041">ofsted.gov.uk/50289041</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>short</td>
       <td>None</td>
       <td>02/06/2025</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80577</td>
@@ -2357,14 +2522,14 @@
       <td>E06000037</td>
       <td>West Berkshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50290038">ofsted.gov.uk/50290038</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Rodica Cobarzan</td>
       <td>15/09/2025</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>2637548</td>
@@ -2373,14 +2538,14 @@
       <td>E06000062</td>
       <td>West Northamptonshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50306547">ofsted.gov.uk/50306547</a></td>
-      <td>not_reported_post_reform</td>
+      <td><span class="grade grade-not-reported">Not reported (2026 framework)</span></td>
       <td>standard</td>
       <td>Rebecca Dubbins</td>
       <td>11/05/2026</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
     <tr>
       <td>80578</td>
@@ -2389,14 +2554,14 @@
       <td>E10000032</td>
       <td>West Sussex</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50216276">ofsted.gov.uk/50216276</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Maire Atherton</td>
       <td>13/03/2023</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>2733698</td>
@@ -2405,14 +2570,14 @@
       <td>E06000064</td>
       <td>Westmorland And Furness</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50252261">ofsted.gov.uk/50252261</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Kathryn Grindrod</td>
       <td>22/04/2024</td>
-      <td>good</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80579</td>
@@ -2421,14 +2586,14 @@
       <td>E08000010</td>
       <td>Wigan</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50291724">ofsted.gov.uk/50291724</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Jenny -Ellen Scotland</td>
       <td>06/10/2025</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80580</td>
@@ -2437,14 +2602,14 @@
       <td>E06000054</td>
       <td>Wiltshire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50235241">ofsted.gov.uk/50235241</a></td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
       <td>short</td>
       <td>Kendra Bell</td>
       <td>25/09/2023</td>
-      <td>outstanding</td>
-      <td>good</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80581</td>
@@ -2453,14 +2618,14 @@
       <td>E08000015</td>
       <td>Wirral</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50238913">ofsted.gov.uk/50238913</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Teresa Godfrey</td>
       <td>18/09/2023</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80582</td>
@@ -2469,14 +2634,14 @@
       <td>E06000041</td>
       <td>Wokingham</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50215917">ofsted.gov.uk/50215917</a></td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
       <td>standard</td>
       <td>Tom Anthony</td>
       <td>06/03/2023</td>
-      <td>requires improvement</td>
-      <td>requires improvement</td>
-      <td>good</td>
-      <td>requires improvement</td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
     </tr>
     <tr>
       <td>80583</td>
@@ -2485,14 +2650,14 @@
       <td>E08000031</td>
       <td>Wolverhampton</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50304388">ofsted.gov.uk/50304388</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>short</td>
       <td>Alison Smale</td>
       <td>26/01/2026</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>outstanding</td>
-      <td>outstanding</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
+      <td><span class="grade grade-outstanding">Outstanding</span></td>
     </tr>
     <tr>
       <td>80584</td>
@@ -2501,17 +2666,41 @@
       <td>E10000034</td>
       <td>Worcestershire</td>
       <td><a href="https://files.ofsted.gov.uk/v1/file/50223271">ofsted.gov.uk/50223271</a></td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
       <td>standard</td>
       <td>Rebecca Quested</td>
       <td>15/05/2023</td>
-      <td>good</td>
-      <td>good</td>
-      <td>requires improvement</td>
-      <td>good</td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-good">Good</span></td>
+      <td><span class="grade grade-requires-improvement">Requires improvement</span></td>
+      <td><span class="grade grade-good">Good</span></td>
     </tr>
   </tbody>
 </table>
-</div>
+        </div>
+
+        <div class="disclaimer">
+
+    <p><strong>Data quality:</strong> this summary is built by scraping data directly out of the published PDF
+    inspection report files on <a href="https://reports.ofsted.gov.uk/">reports.ofsted.gov.uk</a>. Because of
+    variance in report content and PDF encoding, extraction is known to be problematic for a small number of LAs:
+    Southend-on-Sea (overall, help &amp; protection, care leavers grades), Nottingham (framework, dates),
+    Redcar and Cleveland (framework, dates), Knowsley (inspector name), Stoke-on-Trent (inspector name).</p>
+    <p><strong>2026 framework change:</strong> from around April 2026 Ofsted stopped publishing an overall
+    effectiveness judgement in ILACS reports. LAs inspected since then show "Not reported (2026 framework)"
+    for that column rather than a grade - a genuine change in what Ofsted report, not a scrape error.</p>
+    <p><a href="mailto:datatoinsight.enquiries@gmail.com?subject=Ofsted-Scrape-Tool">Feedback</a> on specific
+    problems, inaccuracies or suggestions is welcomed.</p>
+    
+        </div>
+    </main>
+
+    <footer class="page-footer">
+        <div class="wrap">
+            An open-data project scraping published Ofsted inspection reports.
+            Not affiliated with Ofsted or GOV.UK.
+            <a href="https://github.com/JT-39/ofsted-ilacs-scrape-tool">Source code and documentation on GitHub</a>.
+        </div>
+    </footer>
 </body>
 </html>
